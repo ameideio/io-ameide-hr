@@ -243,32 +243,6 @@ class TestAttendance(FrappeTestCase):
 		)
 		self.assertEqual(len(attendances), 1)
 
-<<<<<<< HEAD
-=======
-	def test_get_events_returns_attendance(self):
-		employee = frappe.get_doc("Employee", {"first_name": "_Test Employee"})
-
-		attendance_name = mark_attendance(employee.name, getdate(), status="Present")
-		attendance = frappe.get_value("Attendance", attendance_name, "status")
-
-		self.assertEqual(attendance, "Present")
-
-		frappe.set_user(employee.user_id)
-		try:
-			events = get_events(start=getdate(), end=getdate())
-		finally:
-			frappe.set_user("Administrator")
-
-		self.assertTrue(events)
-		attendance_events = [e for e in events if e.get("doctype") == "Attendance"]
-		self.assertTrue(attendance_events)
-		self.assertEqual(attendance_events[0].get("status"), "Present")
-		self.assertEqual(
-			attendance_events[0].get("employee_name"),
-			frappe.db.get_value("Employee", employee.name, "employee_name"),
-		)
-		self.assertEqual(attendance_events[0].get("attendance_date"), getdate())
-
 	def test_bulk_attendance_marking_through_bg(self):
 		user1 = "test_bg1@example.com"
 		user2 = "test_bg2@example.com"
@@ -299,6 +273,5 @@ class TestAttendance(FrappeTestCase):
 		attendance_records = frappe.get_all("Attendance", {"employee": employee2})
 		self.assertEqual(len(attendance_records), 1)
 
->>>>>>> acf41ea80 (fix: use background job to bulk mark attendance for more than 10 records)
 	def tearDown(self):
 		frappe.db.rollback()

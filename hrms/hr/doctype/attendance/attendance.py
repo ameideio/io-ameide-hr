@@ -367,7 +367,6 @@ def mark_bulk_attendance(data):
 		process_bulk_attendance_in_batches(data)
 		frappe.msgprint(_("Attendance marked successfully."), alert=True)
 
-<<<<<<< HEAD
 	for date in data.unmarked_days:
 		doc_dict = {
 			"doctype": "Attendance",
@@ -378,7 +377,7 @@ def mark_bulk_attendance(data):
 		}
 		attendance = frappe.get_doc(doc_dict).insert()
 		attendance.submit()
-=======
+
 
 def process_bulk_attendance_in_batches(data, chunk_size=20):
 	savepoint = "mark_bulk_attendance"
@@ -400,14 +399,9 @@ def process_bulk_attendance_in_batches(data, chunk_size=20):
 				if not frappe.flags.in_test:
 					frappe.db.rollback(save_point=savepoint)
 				continue
-<<<<<<< HEAD
-	if not frappe.flags.in_test:
-		frappe.db.commit()  # nosemgrep
->>>>>>> acf41ea80 (fix: use background job to bulk mark attendance for more than 10 records)
-=======
+
 		if not frappe.flags.in_test:
 			frappe.db.commit()  # nosemgrep
->>>>>>> cf1951cd2 (fix: commit after batch (had lost the indent because of the flag))
 
 
 @frappe.whitelist()

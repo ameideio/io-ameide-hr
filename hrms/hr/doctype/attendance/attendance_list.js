@@ -33,52 +33,8 @@ frappe.listview_settings["Attendance"] = {
 								query: "erpnext.controllers.queries.employee_query",
 							};
 						},
-<<<<<<< HEAD
 						reqd: 1,
 						onchange: () => me.reset_dialog(dialog),
-=======
-						{
-							label: __("Exclude Holidays"),
-							fieldtype: "Check",
-							fieldname: "exclude_holidays",
-							onchange: () => me.get_unmarked_days(dialog),
-						},
-						{
-							label: __("Unmarked Attendance for days"),
-							fieldname: "unmarked_days",
-							fieldtype: "MultiCheck",
-							options: [],
-							columns: 2,
-							select_all: true,
-						},
-					],
-					primary_action(data) {
-						if (cur_dialog.no_unmarked_days_left) {
-							frappe.msgprint(
-								__(
-									"Attendance from {0} to {1} has already been marked for the Employee {2}",
-									[data.from_date, data.to_date, data.employee],
-								),
-							);
-						} else {
-							frappe.confirm(
-								__("Mark attendance as {0} for {1} on selected dates?", [
-									data.status,
-									data.employee,
-								]),
-								() => {
-									frappe.call({
-										method: "hrms.hr.doctype.attendance.attendance.mark_bulk_attendance",
-										args: {
-											data: data,
-										},
-									});
-								},
-							);
-						}
-						dialog.hide();
-						list_view.refresh();
->>>>>>> acf41ea80 (fix: use background job to bulk mark attendance for more than 10 records)
 					},
 					{
 						fieldtype: "Section Break",
@@ -151,15 +107,6 @@ frappe.listview_settings["Attendance"] = {
 									method: "hrms.hr.doctype.attendance.attendance.mark_bulk_attendance",
 									args: {
 										data: data,
-									},
-									callback: function (r) {
-										if (r.message === 1) {
-											frappe.show_alert({
-												message: __("Attendance Marked"),
-												indicator: "blue",
-											});
-											cur_dialog.hide();
-										}
 									},
 								});
 							},
