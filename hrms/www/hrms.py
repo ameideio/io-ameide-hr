@@ -1,6 +1,8 @@
 import frappe
 from frappe.boot import load_translations
 
+from hrms.ameide_sso.provider import resolve_social_login_key_name
+
 no_cache = 1
 
 
@@ -26,6 +28,7 @@ def get_boot():
 			"site_name": frappe.local.site,
 			"push_relay_server_url": frappe.conf.get("push_relay_server_url") or "",
 			"default_route": get_default_route(),
+			"ameide_sso": _get_ameide_sso_boot(),
 		}
 	)
 
@@ -37,3 +40,16 @@ def get_boot():
 
 def get_default_route():
 	return "/hrms"
+
+
+def _get_ameide_sso_boot():
+	provider = resolve_social_login_key_name()
+	forced = bool(frappe.conf.get("ameide_sso_forced")) and bool(provider)
+	return frappe._dict(
+		{
+			"forced": forced,
+			"provider": provider,
+			"login_url": "/auth/ameide-oidc?redirect-to=/hrms",
+			"logout_url": "/auth/ameide-oidc/logout?post-logout-redirect=/hrms",
+		}
+	)

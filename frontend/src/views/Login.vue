@@ -108,7 +108,7 @@
 
 <script setup>
 import { IonPage, IonContent } from "@ionic/vue"
-import { inject, reactive, ref } from "vue"
+import { inject, onMounted, reactive, ref } from "vue"
 import { Input, Button, ErrorMessage, Dialog, createResource } from "frappe-ui"
 
 import FrappeHRLogo from "@/components/icons/FrappeHRLogo.vue"
@@ -174,5 +174,13 @@ const user_pass_login_disabled = createResource({
 const authProviders = createResource({
 	url: "hrms.api.oauth.oauth_providers",
 	auto: true,
+})
+
+onMounted(() => {
+	const forced = window?.frappe?.boot?.ameide_sso?.forced
+	const loginUrl = window?.frappe?.boot?.ameide_sso?.login_url
+	if (forced && loginUrl) {
+		window.location.href = loginUrl
+	}
 })
 </script>
