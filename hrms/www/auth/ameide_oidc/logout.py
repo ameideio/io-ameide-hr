@@ -45,4 +45,3 @@ def _logout_locally() -> None:
 	except Exception:
 		# best-effort: even if local logout fails, attempt IdP logout
 		pass
-

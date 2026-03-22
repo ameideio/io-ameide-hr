@@ -25,7 +25,9 @@ def login_via_oauth2_as_system_user(*, provider: str, code: str, state: str) -> 
 	user = (get_email(info) or "").lower()
 
 	if not user:
-		frappe.respond_as_web_page(_("Invalid Request"), _("Please ensure that your profile has an email address"))
+		frappe.respond_as_web_page(
+			_("Invalid Request"), _("Please ensure that your profile has an email address")
+		)
 		return
 
 	if update_oauth_user(user, info, provider) is False:
@@ -66,4 +68,3 @@ def _decode_state(state: str | dict[str, Any]) -> dict[str, Any] | None:
 		return json.loads(decoded.decode("utf-8"))
 	except Exception:
 		return None
-

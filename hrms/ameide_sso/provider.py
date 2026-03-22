@@ -60,4 +60,3 @@ def get_social_login_key_ref(name: str) -> SocialLoginKeyRef:
 
 def _is_enabled_social_login_key(name: str) -> bool:
 	return bool(frappe.db.exists("Social Login Key", {"name": name, "enable_social_login": 1}))
-

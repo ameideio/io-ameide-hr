@@ -22,14 +22,9 @@ def get_context(context=None):
 		)
 		return {}
 
-	redirect_to = (
-		frappe.form_dict.get("redirect-to")
-		or frappe.form_dict.get("redirect_to")
-		or "/hrms"
-	)
+	redirect_to = frappe.form_dict.get("redirect-to") or frappe.form_dict.get("redirect_to") or "/hrms"
 
 	location = get_oauth2_authorize_url(provider, redirect_to)
 	frappe.local.response["type"] = "redirect"
 	frappe.local.response["location"] = location
 	return {}
-
