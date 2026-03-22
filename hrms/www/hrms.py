@@ -1,16 +1,12 @@
 import frappe
 from frappe.boot import load_translations
 
-from hrms.ameide_oidc import build_login_redirect_location, is_enabled
+from hrms.ameide_sso.provider import resolve_social_login_key_name
 
 no_cache = 1
 
 
 def get_context(context):
-	if frappe.session.user == "Guest" and is_enabled():
-		frappe.local.flags.redirect_location = build_login_redirect_location(_requested_hrms_path())
-		raise frappe.Redirect
-
 	csrf_token = frappe.sessions.get_csrf_token()
 	frappe.db.commit()  # nosempgrep
 	context = frappe._dict()
@@ -32,6 +28,7 @@ def get_boot():
 			"site_name": frappe.local.site,
 			"push_relay_server_url": frappe.conf.get("push_relay_server_url") or "",
 			"default_route": get_default_route(),
+			"ameide_sso": _get_ameide_sso_boot(),
 		}
 	)
 
@@ -45,9 +42,14 @@ def get_default_route():
 	return "/hrms"
 
 
-def _requested_hrms_path():
-	app_path = frappe.form_dict.get("app_path")
-	if not app_path:
-		return "/hrms"
-
-	return f"/hrms/{str(app_path).lstrip('/')}"
+def _get_ameide_sso_boot():
+	provider = resolve_social_login_key_name()
+	forced = bool(frappe.conf.get("ameide_sso_forced")) and bool(provider)
+	return frappe._dict(
+		{
+			"forced": forced,
+			"provider": provider,
+			"login_url": "/auth/ameide-oidc?redirect-to=/hrms",
+			"logout_url": "/auth/ameide-oidc/logout?post-logout-redirect=/hrms",
+		}
+	)

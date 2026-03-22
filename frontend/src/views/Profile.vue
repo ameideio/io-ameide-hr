@@ -258,6 +258,12 @@ const getFieldInfo = (fieldname) => {
 
 const logout = async () => {
 	try {
+		const forced = window?.frappe?.boot?.ameide_sso?.forced
+		const logoutUrl = window?.frappe?.boot?.ameide_sso?.logout_url
+		if (forced && logoutUrl) {
+			window.location.href = logoutUrl
+			return
+		}
 		await session.logout.submit()
 	} catch (e) {
 		const msg = "An error occurred while attempting to log out!"
