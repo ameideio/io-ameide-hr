@@ -5,16 +5,26 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-frappe = types.ModuleType("frappe")
+class FakeFrappe(types.ModuleType):
+	def __getattr__(self, name):
+		if name in {"session", "form_dict", "db"}:
+			return getattr(self.local, name)
+		raise AttributeError(name)
+
+
+frappe = FakeFrappe("frappe")
 frappe._ = lambda value: value
 frappe.Redirect = type("Redirect", (Exception,), {})
-frappe.local = types.SimpleNamespace(flags=types.SimpleNamespace(), session_obj=None)
-frappe.session = types.SimpleNamespace(user="Guest", data=types.SimpleNamespace())
-frappe.form_dict = {}
+frappe.local = types.SimpleNamespace(
+	flags=types.SimpleNamespace(),
+	session_obj=None,
+	session=types.SimpleNamespace(user="Guest", data=types.SimpleNamespace()),
+	form_dict={},
+	db=types.SimpleNamespace(exists=lambda *args, **kwargs: False),
+)
 frappe.throw = lambda message: (_ for _ in ()).throw(RuntimeError(message))
 frappe.get_doc = lambda *args, **kwargs: None
 frappe.new_doc = lambda *args, **kwargs: None
-frappe.db = types.SimpleNamespace(exists=lambda *args, **kwargs: False)
 
 frappe_utils = types.ModuleType("frappe.utils")
 frappe_utils.get_url = lambda path="/": f"https://example.test{path}"

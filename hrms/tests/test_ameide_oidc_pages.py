@@ -5,6 +5,13 @@ import unittest
 from pathlib import Path
 
 
+class FakeFrappe(types.ModuleType):
+	def __getattr__(self, name):
+		if name in {"session", "form_dict"}:
+			return getattr(self.local, name)
+		raise AttributeError(name)
+
+
 class TestAmeideOidcPages(unittest.TestCase):
 	def _restore_module(self, name, module):
 		if module is None:
@@ -15,14 +22,14 @@ class TestAmeideOidcPages(unittest.TestCase):
 	def _load_module(self, relative_path):
 		original_frappe = sys.modules.get("frappe")
 		original_helper = sys.modules.get("hrms.ameide_oidc")
-		frappe = types.ModuleType("frappe")
+		frappe = FakeFrappe("frappe")
 		frappe.Redirect = type("Redirect", (Exception,), {})
-		frappe.form_dict = {}
 		frappe.local = types.SimpleNamespace(
 			flags=types.SimpleNamespace(),
 			login_manager=types.SimpleNamespace(logout=lambda: setattr(self, "logout_called", True)),
+			form_dict={},
+			session=types.SimpleNamespace(data={}),
 		)
-		frappe.session = types.SimpleNamespace(data={})
 
 		helper = types.ModuleType("hrms.ameide_oidc")
 		helper.begin_login = lambda redirect_to: setattr(self, "begin_login_target", redirect_to)
@@ -47,7 +54,7 @@ class TestAmeideOidcPages(unittest.TestCase):
 	def test_login_page_redirects_to_oidc(self):
 		module, frappe = self._load_module("www/login.py")
 		context = types.SimpleNamespace()
-		frappe.form_dict = {"redirect_to": "/hrms/team"}
+		frappe.local.form_dict = {"redirect_to": "/hrms/team"}
 		module.get_context(context)
 		self.assertEqual(context.no_cache, 1)
 		self.assertEqual(self.begin_login_target, "normalized:/hrms/team")
@@ -55,7 +62,7 @@ class TestAmeideOidcPages(unittest.TestCase):
 	def test_auth_entrypoint_redirects_to_oidc(self):
 		module, frappe = self._load_module("www/auth/ameide_oidc.py")
 		context = types.SimpleNamespace()
-		frappe.form_dict = {"redirect-to": "/hrms"}
+		frappe.local.form_dict = {"redirect-to": "/hrms"}
 		module.get_context(context)
 		self.assertEqual(context.no_cache, 1)
 		self.assertEqual(self.begin_login_target, "normalized:/hrms")
@@ -63,7 +70,7 @@ class TestAmeideOidcPages(unittest.TestCase):
 	def test_auth_redirect_page_completes_login(self):
 		module, frappe = self._load_module("www/auth/ameide_oidc_redirect.py")
 		context = types.SimpleNamespace()
-		frappe.form_dict = {"code": "code-123", "state": "state-456"}
+		frappe.local.form_dict = {"code": "code-123", "state": "state-456"}
 		module.get_context(context)
 		self.assertEqual(context.no_cache, 1)
 		self.assertEqual(self.completed_login, ("code-123", "state-456"))
@@ -71,7 +78,7 @@ class TestAmeideOidcPages(unittest.TestCase):
 	def test_logout_page_uses_keycloak_logout(self):
 		module, frappe = self._load_module("www/logout.py")
 		context = types.SimpleNamespace()
-		frappe.session.data["ameide_oidc_id_token"] = "token-123"
+		frappe.local.session.data["ameide_oidc_id_token"] = "token-123"
 		with self.assertRaises(frappe.Redirect):
 			module.get_context(context)
 		self.assertEqual(context.no_cache, 1)
