@@ -6,7 +6,15 @@ from pathlib import Path
 
 
 class TestAmeideOidcPages(unittest.TestCase):
+	def _restore_module(self, name, module):
+		if module is None:
+			sys.modules.pop(name, None)
+			return
+		sys.modules[name] = module
+
 	def _load_module(self, relative_path):
+		original_frappe = sys.modules.get("frappe")
+		original_helper = sys.modules.get("hrms.ameide_oidc")
 		frappe = types.ModuleType("frappe")
 		frappe.Redirect = type("Redirect", (Exception,), {})
 		frappe.form_dict = {}
@@ -20,8 +28,12 @@ class TestAmeideOidcPages(unittest.TestCase):
 		helper.begin_login = lambda redirect_to: setattr(self, "begin_login_target", redirect_to)
 		helper.normalize_redirect_to = lambda value: f"normalized:{value}"
 		helper.complete_login = lambda code, state: setattr(self, "completed_login", (code, state))
-		helper.build_logout_redirect_location = lambda id_token_hint=None: f"https://auth.example/logout?id_token_hint={id_token_hint}"
+		helper.build_logout_redirect_location = (
+			lambda id_token_hint=None: f"https://auth.example/logout?id_token_hint={id_token_hint}"
+		)
 
+		self.addCleanup(self._restore_module, "frappe", original_frappe)
+		self.addCleanup(self._restore_module, "hrms.ameide_oidc", original_helper)
 		sys.modules["frappe"] = frappe
 		sys.modules["hrms.ameide_oidc"] = helper
 
