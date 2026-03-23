@@ -41,16 +41,14 @@ jobs:
 
       - name: Encode apps.json
         shell: bash
-        env:
-          SOURCE_REF: ${{ github.event.inputs.ref || github.ref_name }}
         run: |
           set -euo pipefail
           apps_json_path="${GITHUB_WORKSPACE}/.github/helper/apps.json"
-          source_ref="${SOURCE_REF#refs/heads/}"
-          source_ref="${source_ref#refs/tags/}"
+          source_ref="$(git rev-parse HEAD)"
           export APPS_JSON_PATH="${apps_json_path}"
           export APP_REPOSITORY="${APP_REPOSITORY}"
           export SOURCE_REF_NORMALIZED="${source_ref}"
+          echo "Publishing app payload from commit ${SOURCE_REF_NORMALIZED}"
           python3 - <<'PY'
           import json
           import os
