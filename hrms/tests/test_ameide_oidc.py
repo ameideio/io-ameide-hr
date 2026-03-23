@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+
 class FakeFrappe(types.ModuleType):
 	def __getattr__(self, name):
 		if name in {"session", "form_dict", "db"}:
