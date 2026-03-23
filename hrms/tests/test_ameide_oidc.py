@@ -1,7 +1,7 @@
-import unittest
+import importlib.util
 import sys
 import types
-import importlib.util
+import unittest
 from pathlib import Path
 from unittest.mock import patch
 
@@ -21,7 +21,9 @@ frappe_utils.get_url = lambda path="/": f"https://example.test{path}"
 
 frappe_utils_oauth = types.ModuleType("frappe.utils.oauth")
 frappe_utils_oauth.get_email = lambda userinfo: userinfo.get("email")
-frappe_utils_oauth.get_oauth2_authorize_url = lambda provider, redirect_to: f"https://auth.example/{provider}?redirect={redirect_to}"
+frappe_utils_oauth.get_oauth2_authorize_url = (
+	lambda provider, redirect_to: f"https://auth.example/{provider}?redirect={redirect_to}"
+)
 frappe_utils_oauth.get_oauth2_flow = lambda provider: None
 frappe_utils_oauth.get_oauth2_providers = lambda: {}
 frappe_utils_oauth.get_redirect_uri = lambda provider: f"https://example.test/auth/{provider}/redirect"

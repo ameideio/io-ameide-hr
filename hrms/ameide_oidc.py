@@ -101,7 +101,11 @@ def ensure_social_login_key() -> None:
 	if not is_enabled():
 		frappe.throw(_("Ameide OIDC is not enabled"))
 
-	doc = frappe.get_doc("Social Login Key", PROVIDER_NAME) if frappe.db.exists("Social Login Key", PROVIDER_NAME) else None
+	doc = (
+		frappe.get_doc("Social Login Key", PROVIDER_NAME)
+		if frappe.db.exists("Social Login Key", PROVIDER_NAME)
+		else None
+	)
 	if not doc:
 		doc = frappe.new_doc("Social Login Key")
 		SocialLoginKey.get_social_login_provider(doc, "Keycloak", initialize=True)
