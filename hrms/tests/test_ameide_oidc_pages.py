@@ -51,6 +51,14 @@ class TestAmeideOidcPages(unittest.TestCase):
 		spec.loader.exec_module(module)
 		return module, frappe
 
+	def _load_hooks(self):
+		module_path = Path(__file__).resolve().parents[1] / "hooks.py"
+		spec = importlib.util.spec_from_file_location("hrms_hooks_under_test", module_path)
+		module = importlib.util.module_from_spec(spec)
+		assert spec and spec.loader
+		spec.loader.exec_module(module)
+		return module
+
 	def test_login_page_redirects_to_oidc(self):
 		module, frappe = self._load_module("www/login.py")
 		context = types.SimpleNamespace()
@@ -86,6 +94,29 @@ class TestAmeideOidcPages(unittest.TestCase):
 		self.assertEqual(
 			frappe.local.flags.redirect_location,
 			"https://auth.example/logout?id_token_hint=token-123",
+		)
+
+	def test_hooks_expose_sales_equivalent_ameide_routes(self):
+		hooks = self._load_hooks()
+		self.assertIn(
+			{"from_route": "/auth/ameide-oidc", "to_route": "ameide_oidc"},
+			hooks.website_route_rules,
+		)
+		self.assertIn(
+			{"from_route": "/auth/ameide-oidc/redirect", "to_route": "ameide_oidc_redirect"},
+			hooks.website_route_rules,
+		)
+		self.assertIn(
+			{"from_route": "/auth/ameide-oidc/logout", "to_route": "ameide_oidc_logout"},
+			hooks.website_route_rules,
+		)
+		self.assertIn(
+			{"source": "/login", "target": "/auth/ameide-oidc"},
+			hooks.website_redirects,
+		)
+		self.assertIn(
+			{"source": "/logout", "target": "/auth/ameide-oidc/logout"},
+			hooks.website_redirects,
 		)
 
 
