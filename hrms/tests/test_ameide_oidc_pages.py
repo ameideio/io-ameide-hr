@@ -119,6 +119,18 @@ class TestAmeideOidcPages(unittest.TestCase):
 			hooks.website_redirects,
 		)
 
+	def test_route_targets_have_matching_www_pages(self):
+		app_root = Path(__file__).resolve().parents[1]
+		for route_target in (
+			"auth/ameide_oidc",
+			"auth/ameide_oidc_redirect",
+			"auth/ameide_oidc_logout",
+		):
+			module_path = app_root / "www" / f"{route_target}.py"
+			template_path = app_root / "www" / f"{route_target}.html"
+			self.assertTrue(module_path.is_file(), module_path)
+			self.assertTrue(template_path.is_file(), template_path)
+
 
 if __name__ == "__main__":
 	unittest.main()
