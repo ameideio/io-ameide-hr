@@ -57,14 +57,21 @@ jobs:
           python3 - <<'PY'
           import json
           import os
+          import sys
           from pathlib import Path
 
           path = Path(os.environ["APPS_JSON_PATH"])
           apps = json.loads(path.read_text())
+          matches = 0
           for app in apps:
               if app.get("url") == os.environ["APP_REPOSITORY"]:
+                  matches += 1
                   app["branch"] = os.environ["SOURCE_REF_NORMALIZED"]
                   app["cache_key"] = os.environ["SOURCE_SHA"]
+          if matches != 1:
+              sys.exit(
+                  f"Expected exactly one app entry for {os.environ['APP_REPOSITORY']}, found {matches}"
+              )
           path.write_text(json.dumps(apps, separators=(",", ":")))
           PY
           echo "APPS_JSON_BASE64=$(base64 -w 0 < "${apps_json_path}")" >> "${GITHUB_ENV}"
