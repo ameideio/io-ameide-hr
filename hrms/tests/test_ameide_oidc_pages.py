@@ -68,7 +68,7 @@ class TestAmeideOidcPages(unittest.TestCase):
 		self.assertEqual(self.begin_login_target, "normalized:/hrms/team")
 
 	def test_auth_entrypoint_redirects_to_oidc(self):
-		module, frappe = self._load_module("www/auth/ameide_oidc.py")
+		module, frappe = self._load_module("www/ameide_oidc.py")
 		context = types.SimpleNamespace()
 		frappe.local.form_dict = {"redirect-to": "/hrms"}
 		module.get_context(context)
@@ -76,7 +76,7 @@ class TestAmeideOidcPages(unittest.TestCase):
 		self.assertEqual(self.begin_login_target, "normalized:/hrms")
 
 	def test_auth_redirect_page_completes_login(self):
-		module, frappe = self._load_module("www/auth/ameide_oidc_redirect.py")
+		module, frappe = self._load_module("www/ameide_oidc_redirect.py")
 		context = types.SimpleNamespace()
 		frappe.local.form_dict = {"code": "code-123", "state": "state-456"}
 		module.get_context(context)
@@ -99,15 +99,15 @@ class TestAmeideOidcPages(unittest.TestCase):
 	def test_hooks_expose_sales_equivalent_ameide_routes(self):
 		hooks = self._load_hooks()
 		self.assertIn(
-			{"from_route": "/auth/ameide-oidc", "to_route": "auth/ameide_oidc"},
+			{"from_route": "/auth/ameide-oidc", "to_route": "ameide_oidc"},
 			hooks.website_route_rules,
 		)
 		self.assertIn(
-			{"from_route": "/auth/ameide-oidc/redirect", "to_route": "auth/ameide_oidc_redirect"},
+			{"from_route": "/auth/ameide-oidc/redirect", "to_route": "ameide_oidc_redirect"},
 			hooks.website_route_rules,
 		)
 		self.assertIn(
-			{"from_route": "/auth/ameide-oidc/logout", "to_route": "auth/ameide_oidc_logout"},
+			{"from_route": "/auth/ameide-oidc/logout", "to_route": "ameide_oidc_logout"},
 			hooks.website_route_rules,
 		)
 		self.assertIn(
