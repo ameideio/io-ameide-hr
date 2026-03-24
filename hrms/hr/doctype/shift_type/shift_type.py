@@ -36,13 +36,13 @@ EMPLOYEE_CHUNK_SIZE = 50
 
 
 def has_half_day_holiday(holiday_list, attendance_date):
-	if not holiday_list or not frappe.db.has_column("Holiday", "half_day"):
+	if not holiday_list or not frappe.db.has_column("Holiday", "is_half_day"):
 		return False
 
 	return bool(
 		frappe.db.exists(
 			"Holiday",
-			{"parent": holiday_list, "holiday_date": attendance_date, "half_day": 1},
+			{"parent": holiday_list, "holiday_date": attendance_date, "is_half_day": 1},
 			cache=True,
 		)
 	)
