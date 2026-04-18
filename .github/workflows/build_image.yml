@@ -69,7 +69,7 @@ jobs:
           path.write_text(json.dumps(apps, separators=(",", ":")))
           PY
           echo "app_ref=${SOURCE_REF_NORMALIZED}" >> "${GITHUB_OUTPUT}"
-          echo "APPS_JSON_BASE64=$(base64 -w 0 < "${apps_json_path}")" >> "${GITHUB_ENV}"
+          echo "apps_json_path=${apps_json_path}" >> "${GITHUB_OUTPUT}"
 
       - name: Checkout frappe_docker
         uses: actions/checkout@v4
@@ -112,9 +112,10 @@ jobs:
           platforms: linux/amd64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          secret-files: |
+            apps_json=${{ steps.source.outputs.apps_json_path }}
           build-args: |
             FRAPPE_BRANCH=${{ env.FRAPPE_BRANCH }}
-            APPS_JSON_BASE64=${{ env.APPS_JSON_BASE64 }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
