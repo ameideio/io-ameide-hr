@@ -85,16 +85,24 @@ jobs:
         run: |
           set -euo pipefail
           python3 - <<'PY'
+          import re
           from pathlib import Path
 
           path = Path("builds/images/layered/Containerfile")
           text = path.read_text()
-          needle = "USER frappe\\n\\nRUN --mount=type=secret,id=apps_json,target=/opt/frappe/apps.json,uid=1000,gid=1000 \\\\\\n"
-          replacement = "USER frappe\\n\\nARG APPS_CACHEBUST\\n\\nRUN --mount=type=secret,id=apps_json,target=/opt/frappe/apps.json,uid=1000,gid=1000 \\\\\\n  test -n \\\"$APPS_CACHEBUST\\\" && \\\\\\n"
+          pattern = re.compile(
+              r"USER frappe\\s*\\n\\s*RUN --mount=type=secret,id=apps_json,target=/opt/frappe/apps\\.json,uid=1000,gid=1000 \\\\\\n"
+          )
+          replacement = (
+              "USER frappe\\n\\n"
+              "ARG APPS_CACHEBUST\\n\\n"
+              "RUN --mount=type=secret,id=apps_json,target=/opt/frappe/apps.json,uid=1000,gid=1000 \\\\\\n"
+              "  test -n \\\"$APPS_CACHEBUST\\\" && \\\\\\n"
+          )
           if "ARG APPS_CACHEBUST" not in text:
-              if needle not in text:
+              text, count = pattern.subn(replacement, text, count=1)
+              if count != 1:
                   raise SystemExit("Unable to locate apps_json build layer in Containerfile")
-              text = text.replace(needle, replacement, 1)
               path.write_text(text)
           PY
 
