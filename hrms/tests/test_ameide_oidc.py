@@ -1,14 +1,17 @@
 import base64
 import json
+import os
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
+from unittest.mock import patch
 
 import frappe
 from frappe.auth import LoginManager
 from frappe.tests import UnitTestCase
 from frappe.utils.password import set_encrypted_password
 
+from hrms.ameide_sso.bootstrap import ensure_social_login_key_from_env
 from hrms.www.auth.ameide_oidc import index as ameide_oidc_index
 from hrms.www.auth.ameide_oidc import logout as ameide_oidc_logout
 from hrms.www.auth.ameide_oidc import redirect as ameide_oidc_redirect
@@ -132,6 +135,53 @@ class TestAmeideOidc(UnitTestCase):
 		self.assertIn("client_id=client-id", location)
 		self.assertIn("post_logout_redirect_uri=", location)
 
+	def test_bootstrap_creates_or_updates_social_login_key_from_env(self):
+		provider_name = "ameide-bootstrap"
+		with patch.dict(
+			os.environ,
+			{
+				"AMEIDE_OIDC_PROVIDER_NAME": provider_name,
+				"AMEIDE_OIDC_PROVIDER_LABEL": "Ameide Bootstrap",
+				"AMEIDE_OIDC_ISSUER_URL": self._issuer,
+				"AMEIDE_OIDC_CLIENT_ID": "bootstrap-client",
+				"AMEIDE_OIDC_CLIENT_SECRET": "bootstrap-secret",
+				"AMEIDE_OIDC_REDIRECT_PATH": "/auth/ameide-oidc/redirect",
+				"AMEIDE_OIDC_USER_ID_PROPERTY": "sub",
+			},
+			clear=False,
+		):
+			ensure_social_login_key_from_env()
+
+		doc = frappe.get_doc("Social Login Key", provider_name)
+		self.assertEqual(doc.provider_name, "Ameide Bootstrap")
+		self.assertEqual(doc.client_id, "bootstrap-client")
+		self.assertEqual(doc.base_url, self._issuer)
+		self.assertEqual(doc.redirect_url, "/auth/ameide-oidc/redirect")
+		self.assertTrue(doc.enable_social_login)
+
+		with patch.dict(
+			os.environ,
+			{
+				"AMEIDE_OIDC_PROVIDER_NAME": provider_name,
+				"AMEIDE_OIDC_PROVIDER_LABEL": "Ameide Bootstrap",
+				"AMEIDE_OIDC_ISSUER_URL": self._issuer,
+				"AMEIDE_OIDC_CLIENT_ID": "bootstrap-client-updated",
+				"AMEIDE_OIDC_CLIENT_SECRET": "bootstrap-secret-updated",
+				"AMEIDE_OIDC_REDIRECT_PATH": "/auth/ameide-oidc/redirect",
+				"AMEIDE_OIDC_USER_ID_PROPERTY": "sub",
+			},
+			clear=False,
+		):
+			ensure_social_login_key_from_env()
+
+		self.assertEqual(
+			frappe.db.get_value("Social Login Key", provider_name, "client_id"),
+			"bootstrap-client-updated",
+		)
+		self.assertTrue(frappe.db.exists("Social Login Key", provider_name))
+		frappe.delete_doc("Social Login Key", provider_name, force=True)
+		frappe.db.commit()
+
 	@classmethod
 	def _ensure_social_login_key(cls):
 		if frappe.db.exists("Social Login Key", cls._provider_name):
@@ -156,4 +206,3 @@ class TestAmeideOidc(UnitTestCase):
 
 		set_encrypted_password("Social Login Key", doc.name, "client_secret", "client-secret")
 		frappe.db.commit()
-

@@ -40,6 +40,7 @@ jobs:
           ref: ${{ github.event.inputs.ref || github.ref_name }}
 
       - name: Encode apps.json
+        id: source
         shell: bash
         env:
           SOURCE_REF: ${{ github.event.inputs.ref || github.ref_name }}
@@ -67,6 +68,7 @@ jobs:
                   app["cache_key"] = os.environ["SOURCE_SHA"]
           path.write_text(json.dumps(apps, separators=(",", ":")))
           PY
+          echo "app_ref=${SOURCE_REF_NORMALIZED}" >> "${GITHUB_OUTPUT}"
           echo "APPS_JSON_BASE64=$(base64 -w 0 < "${apps_json_path}")" >> "${GITHUB_ENV}"
 
       - name: Checkout frappe_docker
@@ -93,8 +95,8 @@ jobs:
           images: ${{ env.IMAGE_NAME }}
           tags: |
             type=sha,format=long,prefix=sha-
-            type=raw,value=main,enable=${{ github.ref == 'refs/heads/develop' }}
-            type=raw,value=main-{{sha}},enable=${{ github.ref == 'refs/heads/develop' }}
+            type=raw,value=develop,enable=${{ steps.source.outputs.app_ref == 'develop' }}
+            type=raw,value=develop-{{sha}},enable=${{ steps.source.outputs.app_ref == 'develop' }}
             type=ref,event=tag
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
