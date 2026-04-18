@@ -41,7 +41,10 @@ def ensure_social_login_key(config: SocialLoginKeyConfig) -> dict[str, str | boo
 	doc.api_endpoint = "/protocol/openid-connect/userinfo"
 	doc.redirect_url = config.redirect_url
 	doc.user_id_property = config.user_id_property
-	doc.enable_social_login = 1
+	# Frappe validates that enabled providers already have an encrypted client
+	# secret, so create/update the record disabled first and enable it after the
+	# secret has been written.
+	doc.enable_social_login = 0
 
 	if exists:
 		doc.save(ignore_permissions=True)
@@ -49,6 +52,9 @@ def ensure_social_login_key(config: SocialLoginKeyConfig) -> dict[str, str | boo
 		doc.insert(ignore_permissions=True)
 
 	set_encrypted_password("Social Login Key", doc.name, "client_secret", config.client_secret)
+	doc.reload()
+	doc.enable_social_login = 1
+	doc.save(ignore_permissions=True)
 	frappe.db.commit()  # nosemgrep: bootstrap must persist the encrypted secret before bench exits
 	return {"name": doc.name, "client_id": config.client_id, "updated": exists}
 
