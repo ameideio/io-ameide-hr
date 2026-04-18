@@ -68,10 +68,8 @@ jobs:
                   app["cache_key"] = os.environ["SOURCE_SHA"]
           path.write_text(json.dumps(apps, separators=(",", ":")))
           PY
-          apps_json_sha="$(shasum -a 256 "${apps_json_path}" | awk '{print $1}')"
           echo "app_ref=${SOURCE_REF_NORMALIZED}" >> "${GITHUB_OUTPUT}"
           echo "apps_json_path=${apps_json_path}" >> "${GITHUB_OUTPUT}"
-          echo "apps_json_sha=${apps_json_sha}" >> "${GITHUB_OUTPUT}"
 
       - name: Checkout frappe_docker
         uses: actions/checkout@v4
@@ -79,32 +77,6 @@ jobs:
           repository: frappe/frappe_docker
           path: builds
           fetch-depth: 0
-
-      - name: Patch frappe_docker app cache bust
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          import re
-          from pathlib import Path
-
-          path = Path("builds/images/layered/Containerfile")
-          text = path.read_text()
-          pattern = re.compile(
-              r"USER frappe\\s*\\n\\s*RUN --mount=type=secret,id=apps_json,target=/opt/frappe/apps\\.json,uid=1000,gid=1000 \\\\\\n"
-          )
-          replacement = (
-              "USER frappe\\n\\n"
-              "ARG APPS_CACHEBUST\\n\\n"
-              "RUN --mount=type=secret,id=apps_json,target=/opt/frappe/apps.json,uid=1000,gid=1000 \\\\\\n"
-              "  test -n \\\"$APPS_CACHEBUST\\\" && \\\\\\n"
-          )
-          if "ARG APPS_CACHEBUST" not in text:
-              text, count = pattern.subn(replacement, text, count=1)
-              if count != 1:
-                  raise SystemExit("Unable to locate apps_json build layer in Containerfile")
-              path.write_text(text)
-          PY
 
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -144,7 +116,8 @@ jobs:
             apps_json=${{ steps.source.outputs.apps_json_path }}
           build-args: |
             FRAPPE_BRANCH=${{ env.FRAPPE_BRANCH }}
-            APPS_CACHEBUST=${{ steps.source.outputs.apps_json_sha }}
+          no-cache-filters: |
+            builder
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
