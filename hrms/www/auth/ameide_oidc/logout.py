@@ -41,7 +41,7 @@ def _logout_locally() -> None:
 		login_manager = getattr(frappe.local, "login_manager", None)
 		if login_manager:
 			login_manager.logout()
-			frappe.db.commit()
+			frappe.db.commit()  # nosemgrep: local logout must persist session teardown before IdP redirect
 	except Exception:
 		# best-effort: even if local logout fails, attempt IdP logout
 		pass

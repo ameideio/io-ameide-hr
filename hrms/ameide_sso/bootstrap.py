@@ -49,7 +49,7 @@ def ensure_social_login_key(config: SocialLoginKeyConfig) -> dict[str, str | boo
 		doc.insert(ignore_permissions=True)
 
 	set_encrypted_password("Social Login Key", doc.name, "client_secret", config.client_secret)
-	frappe.db.commit()
+	frappe.db.commit()  # nosemgrep: bootstrap must persist the encrypted secret before bench exits
 	return {"name": doc.name, "client_id": config.client_id, "updated": exists}
 
 

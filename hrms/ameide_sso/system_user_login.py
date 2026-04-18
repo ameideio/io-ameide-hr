@@ -50,7 +50,7 @@ def login_via_oauth2_as_system_user(*, provider: str, code: str, state: str) -> 
 		_user.save()
 
 	frappe.local.login_manager.login_as(user)  # because of a GET request! (matches upstream)
-	frappe.db.commit()
+	frappe.db.commit()  # nosemgrep: login state must be flushed before redirecting from this GET handler
 
 	redirect_post_login(
 		desk_user=True,

@@ -178,7 +178,7 @@ class TestAmeideOidc(UnitTestCase):
 		)
 		self.assertTrue(frappe.db.exists("Social Login Key", provider_name))
 		frappe.delete_doc("Social Login Key", provider_name, force=True)
-		frappe.db.commit()
+		frappe.db.commit()  # nosemgrep: test cleanup must persist before later assertions run
 
 	@classmethod
 	def _ensure_social_login_key(cls):
@@ -203,4 +203,4 @@ class TestAmeideOidc(UnitTestCase):
 		).insert(ignore_permissions=True)
 
 		set_encrypted_password("Social Login Key", doc.name, "client_secret", "client-secret")
-		frappe.db.commit()
+		frappe.db.commit()  # nosemgrep: test fixture must persist encrypted secret before callback flow reads it
