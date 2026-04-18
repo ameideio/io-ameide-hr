@@ -5,7 +5,6 @@ from dataclasses import dataclass
 
 import frappe
 from frappe import _
-from frappe.utils.password import set_encrypted_password
 
 
 @dataclass(frozen=True)
@@ -41,20 +40,17 @@ def ensure_social_login_key(config: SocialLoginKeyConfig) -> dict[str, str | boo
 	doc.api_endpoint = "/protocol/openid-connect/userinfo"
 	doc.redirect_url = config.redirect_url
 	doc.user_id_property = config.user_id_property
-	# Frappe validates that enabled providers already have an encrypted client
-	# secret, so create/update the record disabled first and enable it after the
-	# secret has been written.
-	doc.enable_social_login = 0
+	# Use Frappe's normal password-field save path here. Setting the encrypted
+	# secret out-of-band does not satisfy Social Login Key validation during the
+	# same save cycle.
+	doc.client_secret = config.client_secret
+	doc.enable_social_login = 1
 
 	if exists:
 		doc.save(ignore_permissions=True)
 	else:
 		doc.insert(ignore_permissions=True)
 
-	set_encrypted_password("Social Login Key", doc.name, "client_secret", config.client_secret)
-	doc.reload()
-	doc.enable_social_login = 1
-	doc.save(ignore_permissions=True)
 	frappe.db.commit()  # nosemgrep: bootstrap must persist the encrypted secret before bench exits
 	return {"name": doc.name, "client_id": config.client_id, "updated": exists}
 
