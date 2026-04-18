@@ -116,6 +116,8 @@ jobs:
             apps_json=${{ steps.source.outputs.apps_json_path }}
           build-args: |
             FRAPPE_BRANCH=${{ env.FRAPPE_BRANCH }}
+          no-cache-filters: |
+            builder
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
