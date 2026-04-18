@@ -8,7 +8,8 @@ no_cache = 1
 
 def get_context(context):
 	csrf_token = frappe.sessions.get_csrf_token()
-	frappe.db.commit()  # nosemgrep: csrf token issuance must persist before boot payload is returned
+	# nosemgrep: frappe-semgrep-rules.rules.frappe-manual-commit -- csrf token issuance must persist before boot payload is returned
+	frappe.db.commit()
 	context = frappe._dict()
 	context.csrf_token = csrf_token
 	context.boot = get_boot()
