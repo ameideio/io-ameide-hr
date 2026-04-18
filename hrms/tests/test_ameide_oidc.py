@@ -3,8 +3,8 @@ import json
 import os
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, urlparse
 from unittest.mock import patch
+from urllib.parse import parse_qs, urlparse
 
 import frappe
 from frappe.auth import LoginManager
@@ -30,9 +30,7 @@ class _OidcHandler(BaseHTTPRequestHandler):
 		self.send_response(200)
 		self.send_header("Content-Type", "application/json")
 		self.end_headers()
-		self.wfile.write(
-			json.dumps({"access_token": "access-token", "token_type": "Bearer"}).encode("utf-8")
-		)
+		self.wfile.write(json.dumps({"access_token": "access-token", "token_type": "Bearer"}).encode("utf-8"))
 
 	def do_GET(self):
 		if self.path != "/protocol/openid-connect/userinfo":
