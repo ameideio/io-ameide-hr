@@ -82,6 +82,7 @@ class TestAmeideOidc(UnitTestCase):
 		super().setUp()
 		frappe.local.form_dict = frappe._dict()
 		frappe.local.response = {}
+		frappe.local.request = frappe._dict(path="/", cookies={})
 		frappe.local.login_manager = LoginManager()
 		frappe.session.user = "Guest"
 
@@ -206,9 +207,10 @@ class TestAmeideOidc(UnitTestCase):
 				"api_endpoint": "/protocol/openid-connect/userinfo",
 				"redirect_url": "/auth/ameide-oidc/redirect",
 				"user_id_property": "sub",
-				"enable_social_login": 1,
+				"enable_social_login": 0,
 			}
 		).insert(ignore_permissions=True)
 
 		set_encrypted_password("Social Login Key", doc.name, "client_secret", "client-secret")
+		frappe.db.set_value("Social Login Key", doc.name, "enable_social_login", 1)
 		frappe.db.commit()  # nosemgrep: test fixture must persist encrypted secret before callback flow reads it

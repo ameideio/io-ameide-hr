@@ -21,7 +21,13 @@ class TestAmeideOidcPages(unittest.TestCase):
 
 	def _load_module(self, relative_path):
 		original_frappe = sys.modules.get("frappe")
-		original_helper = sys.modules.get("hrms.ameide_oidc")
+		original_hrms = sys.modules.get("hrms")
+		original_hrms_www = sys.modules.get("hrms.www")
+		original_hrms_www_auth = sys.modules.get("hrms.www.auth")
+		original_hrms_www_auth_ameide_oidc = sys.modules.get("hrms.www.auth.ameide_oidc")
+		original_index = sys.modules.get("hrms.www.auth.ameide_oidc.index")
+		original_redirect = sys.modules.get("hrms.www.auth.ameide_oidc.redirect")
+		original_logout = sys.modules.get("hrms.www.auth.ameide_oidc.logout")
 		frappe = FakeFrappe("frappe")
 		frappe.Redirect = type("Redirect", (Exception,), {})
 		frappe.local = types.SimpleNamespace(
@@ -31,18 +37,44 @@ class TestAmeideOidcPages(unittest.TestCase):
 			session=types.SimpleNamespace(data={}),
 		)
 
-		helper = types.ModuleType("hrms.ameide_oidc")
-		helper.begin_login = lambda redirect_to: setattr(self, "begin_login_target", redirect_to)
-		helper.normalize_redirect_to = lambda value: f"normalized:{value}"
-		helper.complete_login = lambda code, state: setattr(self, "completed_login", (code, state))
-		helper.build_logout_redirect_location = (
-			lambda id_token_hint=None: f"https://auth.example/logout?id_token_hint={id_token_hint}"
-		)
+		index = types.ModuleType("hrms.www.auth.ameide_oidc.index")
+		index.get_context = lambda context=None: setattr(self, "index_context", context)
+		redirect = types.ModuleType("hrms.www.auth.ameide_oidc.redirect")
+		redirect.get_context = lambda context=None: setattr(self, "redirect_context", context)
+		logout = types.ModuleType("hrms.www.auth.ameide_oidc.logout")
+		logout.get_context = lambda context=None: setattr(self, "logout_context", context)
+
+		hrms = types.ModuleType("hrms")
+		hrms.__path__ = [str(Path(__file__).resolve().parents[1])]
+		hrms_www = types.ModuleType("hrms.www")
+		hrms_www.__path__ = [str(Path(__file__).resolve().parents[1] / "www")]
+		hrms_www_auth = types.ModuleType("hrms.www.auth")
+		hrms_www_auth.__path__ = [str(Path(__file__).resolve().parents[1] / "www" / "auth")]
+		hrms_www_auth_ameide_oidc = types.ModuleType("hrms.www.auth.ameide_oidc")
+		hrms_www_auth_ameide_oidc.__path__ = [
+			str(Path(__file__).resolve().parents[1] / "www" / "auth" / "ameide_oidc")
+		]
 
 		self.addCleanup(self._restore_module, "frappe", original_frappe)
-		self.addCleanup(self._restore_module, "hrms.ameide_oidc", original_helper)
+		self.addCleanup(self._restore_module, "hrms", original_hrms)
+		self.addCleanup(self._restore_module, "hrms.www", original_hrms_www)
+		self.addCleanup(self._restore_module, "hrms.www.auth", original_hrms_www_auth)
+		self.addCleanup(
+			self._restore_module,
+			"hrms.www.auth.ameide_oidc",
+			original_hrms_www_auth_ameide_oidc,
+		)
+		self.addCleanup(self._restore_module, "hrms.www.auth.ameide_oidc.index", original_index)
+		self.addCleanup(self._restore_module, "hrms.www.auth.ameide_oidc.redirect", original_redirect)
+		self.addCleanup(self._restore_module, "hrms.www.auth.ameide_oidc.logout", original_logout)
 		sys.modules["frappe"] = frappe
-		sys.modules["hrms.ameide_oidc"] = helper
+		sys.modules["hrms"] = hrms
+		sys.modules["hrms.www"] = hrms_www
+		sys.modules["hrms.www.auth"] = hrms_www_auth
+		sys.modules["hrms.www.auth.ameide_oidc"] = hrms_www_auth_ameide_oidc
+		sys.modules["hrms.www.auth.ameide_oidc.index"] = index
+		sys.modules["hrms.www.auth.ameide_oidc.redirect"] = redirect
+		sys.modules["hrms.www.auth.ameide_oidc.logout"] = logout
 
 		module_path = Path(__file__).resolve().parents[1] / relative_path
 		spec = importlib.util.spec_from_file_location(f"hrms_{relative_path.replace('/', '_')}", module_path)
@@ -64,37 +96,28 @@ class TestAmeideOidcPages(unittest.TestCase):
 		context = types.SimpleNamespace()
 		frappe.local.form_dict = {"redirect_to": "/hrms/team"}
 		module.get_context(context)
-		self.assertEqual(context.no_cache, 1)
-		self.assertEqual(self.begin_login_target, "normalized:/hrms/team")
+		self.assertIs(self.index_context, context)
 
 	def test_auth_entrypoint_redirects_to_oidc(self):
 		module, frappe = self._load_module("www/ameide_oidc.py")
 		context = types.SimpleNamespace()
 		frappe.local.form_dict = {"redirect-to": "/hrms"}
 		module.get_context(context)
-		self.assertEqual(context.no_cache, 1)
-		self.assertEqual(self.begin_login_target, "normalized:/hrms")
+		self.assertIs(self.index_context, context)
 
 	def test_auth_redirect_page_completes_login(self):
 		module, frappe = self._load_module("www/ameide_oidc_redirect.py")
 		context = types.SimpleNamespace()
 		frappe.local.form_dict = {"code": "code-123", "state": "state-456"}
 		module.get_context(context)
-		self.assertEqual(context.no_cache, 1)
-		self.assertEqual(self.completed_login, ("code-123", "state-456"))
+		self.assertIs(self.redirect_context, context)
 
 	def test_logout_page_uses_keycloak_logout(self):
 		module, frappe = self._load_module("www/logout.py")
 		context = types.SimpleNamespace()
 		frappe.local.session.data["ameide_oidc_id_token"] = "token-123"
-		with self.assertRaises(frappe.Redirect):
-			module.get_context(context)
-		self.assertEqual(context.no_cache, 1)
-		self.assertTrue(self.logout_called)
-		self.assertEqual(
-			frappe.local.flags.redirect_location,
-			"https://auth.example/logout?id_token_hint=token-123",
-		)
+		module.get_context(context)
+		self.assertIs(self.logout_context, context)
 
 	def test_hooks_expose_sales_equivalent_ameide_routes(self):
 		hooks = self._load_hooks()
