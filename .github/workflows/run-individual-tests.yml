@@ -17,7 +17,7 @@ jobs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
     - name: Clone
-      uses: actions/checkout@v6
+      uses: actions/checkout@v6.0.2
     - id: set-matrix
       run: |
         # Use grep and find to get the list of test files
@@ -73,7 +73,7 @@ jobs:
 
     steps:
       - name: Clone
-        uses: actions/checkout@v6
+        uses: actions/checkout@v6.0.2
 
       - name: Setup Python
         uses: actions/setup-python@v6
@@ -81,7 +81,7 @@ jobs:
           python-version: '3.14'
 
       - name: Setup Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v6.4.0
         with:
           node-version: 24
           check-latest: true
