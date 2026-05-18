@@ -25,7 +25,7 @@ concurrency:
 
 jobs:
   tests:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.AMEIDE_RUNS_ON }}
     timeout-minutes: 60
     env:
       NODE_ENV: "production"
@@ -130,7 +130,7 @@ jobs:
   coverage:
     name: Coverage Wrap Up
     needs: tests
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.AMEIDE_RUNS_ON }}
     if: ${{ github.event_name != 'pull_request' }}
     steps:
       - name: Clone

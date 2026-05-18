@@ -9,7 +9,7 @@ permissions:
 jobs:
   commit-lint:
     name: 'Semantic Commits'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.AMEIDE_RUNS_ON }}
     if: github.event_name == 'pull_request'
 
     steps:
@@ -28,7 +28,7 @@ jobs:
 
   linter:
     name: 'Frappe Linter'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.AMEIDE_RUNS_ON }}
     if: github.event_name == 'pull_request'
 
     steps:
