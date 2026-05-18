@@ -8,7 +8,7 @@ on:
 jobs:
   regenerate-pot-file:
     name: Regenerate POT file
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.AMEIDE_RUNS_ON }}
     strategy:
       fail-fast: false
       matrix:
