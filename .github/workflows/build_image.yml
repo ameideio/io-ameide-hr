@@ -30,7 +30,7 @@ env:
 jobs:
   publish:
     name: Publish
-    runs-on: ${{ vars.AMEIDE_RUNS_ON }}
+    runs-on: ${{ vars.AMEIDE_DIND_RUNS_ON }}
 
     steps:
       - name: Checkout
