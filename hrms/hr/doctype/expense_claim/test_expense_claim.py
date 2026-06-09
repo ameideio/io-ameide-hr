@@ -476,11 +476,9 @@ class TestExpenseClaim(HRMSTestSuite):
 			create_driver,
 			create_vehicle,
 		)
-		from erpnext.tests.utils import create_test_contact_and_address
 
 		driver = create_driver()
 		create_vehicle()
-		create_test_contact_and_address()
 		address = create_address(driver)
 
 		delivery_trip = create_delivery_trip(driver, address, company="_Test Company")
@@ -563,10 +561,11 @@ class TestExpenseClaim(HRMSTestSuite):
 	def test_repost(self):
 		# Update repost settings
 		allowed_types = ["Expense Claim"]
-		repost_settings = frappe.get_doc("Repost Accounting Ledger Settings")
-		for x in allowed_types:
-			repost_settings.append("allowed_types", {"document_type": x, "allowed": True})
-		repost_settings.save()
+		accounts_settings = frappe.get_doc("Accounts Settings")
+		for doctype in allowed_types:
+			if doctype not in [x.document_type for x in accounts_settings.repost_allowed_types]:
+				accounts_settings.append("repost_allowed_types", {"document_type": doctype})
+		accounts_settings.save()
 
 		payable_account = get_payable_account(company_name)
 		taxes = generate_taxes(rate=10)

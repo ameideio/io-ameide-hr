@@ -37,17 +37,9 @@ def login_via_oauth2_as_system_user(*, provider: str, code: str, state: str) -> 
 	_user.flags.ignore_permissions = True
 	_user.flags.no_welcome_mail = True
 
-	changed = False
-	if _user.user_type != "System User":
-		_user.user_type = "System User"
-		changed = True
-
-	if frappe.db.exists("Role", "Employee"):
-		_user.add_roles("Employee")
-		changed = True
-
-	if changed:
-		_user.save()
+	_user.append_roles("HR User")
+	_user.user_type = "System User"
+	_user.save()
 
 	frappe.local.login_manager.login_as(user)  # because of a GET request! (matches upstream)
 	frappe.db.commit()  # nosemgrep: login state must be flushed before redirecting from this GET handler

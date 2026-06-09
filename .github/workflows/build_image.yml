@@ -24,7 +24,7 @@ permissions:
 
 env:
   IMAGE_NAME: ghcr.io/ameideio/io-ameide-hr
-  FRAPPE_BRANCH: version-15
+  FRAPPE_BRANCH: develop
   APP_REPOSITORY: https://github.com/ameideio/io-ameide-hr
 
 jobs:
