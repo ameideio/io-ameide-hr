@@ -7,16 +7,12 @@ from urllib.parse import quote, urlencode
 import frappe
 from frappe import _
 from frappe.integrations.doctype.social_login_key.social_login_key import SocialLoginKey
-from frappe.integrations.oauth2_logins import decoder_compat
 from frappe.utils import get_url
 from frappe.utils.oauth import (
-	get_email,
 	get_oauth2_authorize_url,
-	get_oauth2_flow,
-	get_oauth2_providers,
-	get_redirect_uri,
-	login_oauth_user,
 )
+
+from hrms.ameide_sso.system_user_login import login_via_oauth2_as_system_user
 
 PROVIDER_NAME = "keycloak"
 APP_BASE_PATH = "/hrms"
@@ -61,28 +57,7 @@ def begin_login(redirect_to: str | None = None) -> None:
 
 def complete_login(code: str, state: str) -> None:
 	ensure_social_login_key()
-
-	flow = get_oauth2_flow(PROVIDER_NAME)
-	oauth_provider = get_oauth2_providers()[PROVIDER_NAME]
-	session = flow.get_auth_session(
-		data={
-			"code": code,
-			"redirect_uri": get_redirect_uri(PROVIDER_NAME),
-			"grant_type": "authorization_code",
-		},
-		decoder=decoder_compat,
-	)
-	token_response = json.loads(session.access_token_response.text)
-	userinfo = session.get(
-		oauth_provider["api_endpoint"],
-		params=oauth_provider.get("api_endpoint_args"),
-	).json()
-
-	if not (userinfo.get("email_verified") or get_email(userinfo)):
-		frappe.throw(_("Email not verified with Keycloak"))
-
-	login_oauth_user(userinfo, provider=PROVIDER_NAME, state=state)
-	_store_id_token(token_response.get("id_token"))
+	login_via_oauth2_as_system_user(provider=PROVIDER_NAME, code=code, state=state)
 
 
 def build_logout_redirect_location(id_token_hint: str | None = None) -> str:
@@ -141,16 +116,6 @@ def ensure_social_login_key() -> None:
 		doc.insert(ignore_permissions=True)
 	else:
 		doc.save(ignore_permissions=True)
-
-
-def _store_id_token(id_token: str | None) -> None:
-	if not id_token or frappe.session.user == "Guest":
-		return
-
-	frappe.session.data.ameide_oidc_id_token = id_token
-	if getattr(frappe.local, "session_obj", None):
-		frappe.local.session_obj.data.data.ameide_oidc_id_token = id_token
-		frappe.local.session_obj.update(force=True)
 
 
 def _env(name: str, default: str | None = None) -> str | None:

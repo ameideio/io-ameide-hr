@@ -40,6 +40,7 @@ def ensure_social_login_key(config: SocialLoginKeyConfig) -> dict[str, str | boo
 	doc.api_endpoint = "/protocol/openid-connect/userinfo"
 	doc.redirect_url = config.redirect_url
 	doc.user_id_property = config.user_id_property
+	doc.sign_ups = "Allow"
 	# Use Frappe's normal password-field save path here. Setting the encrypted
 	# secret out-of-band does not satisfy Social Login Key validation during the
 	# same save cycle.
@@ -49,7 +50,7 @@ def ensure_social_login_key(config: SocialLoginKeyConfig) -> dict[str, str | boo
 	if exists:
 		doc.save(ignore_permissions=True)
 	else:
-		doc.insert(ignore_permissions=True)
+		doc.insert(ignore_permissions=True, set_name=config.name)
 
 	frappe.db.commit()  # nosemgrep: bootstrap must persist the encrypted secret before bench exits
 	return {"name": doc.name, "client_id": config.client_id, "updated": exists}

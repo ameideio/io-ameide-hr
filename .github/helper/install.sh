@@ -10,12 +10,10 @@ sudo apt install libcups2-dev redis-server mariadb-client libmariadb-dev
 
 pip install frappe-bench
 
-githubbranch=${GITHUB_BASE_REF:-${GITHUB_REF##*/}}
 frappeuser=${FRAPPE_USER:-"frappe"}
-frappebranch=${FRAPPE_BRANCH:-$githubbranch}
-erpnextbranch=${ERPNEXT_BRANCH:-$githubbranch}
-paymentsbranch=${PAYMENTS_BRANCH:-${githubbranch%"-hotfix"}}
-lendingbranch="develop"
+frappebranch=${FRAPPE_BRANCH:-develop}
+erpnextbranch=${ERPNEXT_BRANCH:-develop}
+paymentsbranch=${PAYMENTS_BRANCH:-$erpnextbranch}
 
 git clone "https://github.com/${frappeuser}/frappe" --branch "${frappebranch}" --depth 1
 bench init --skip-assets --frappe-path ~/frappe --python "$(which python)" frappe-bench
@@ -49,7 +47,6 @@ sed -i 's/redis_socketio:/# redis_socketio:/g' Procfile
 
 bench get-app "https://github.com/${frappeuser}/payments" --branch "$paymentsbranch"
 bench get-app "https://github.com/${frappeuser}/erpnext" --branch "$erpnextbranch" --resolve-deps
-bench get-app "https://github.com/${frappeuser}/lending" --branch "$lendingbranch"
 bench get-app hrms "${GITHUB_WORKSPACE}"
 bench setup requirements --dev
 
@@ -57,5 +54,4 @@ bench start &>> ~/frappe-bench/bench_start.log &
 CI=Yes bench build --app frappe &
 bench --site test_site reinstall --yes
 
-bench --verbose --site test_site install-app lending
 bench --verbose --site test_site install-app hrms

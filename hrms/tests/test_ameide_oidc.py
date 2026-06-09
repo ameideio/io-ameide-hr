@@ -9,7 +9,7 @@ from urllib.parse import parse_qs, urlparse
 import frappe
 from frappe.auth import LoginManager
 from frappe.tests import UnitTestCase
-from frappe.utils.password import get_decrypted_password, set_encrypted_password
+from frappe.utils.password import get_decrypted_password
 
 from hrms.ameide_sso.bootstrap import ensure_social_login_key_from_env
 from hrms.www.auth.ameide_oidc import index as ameide_oidc_index
@@ -53,6 +53,26 @@ class _OidcHandler(BaseHTTPRequestHandler):
 		)
 
 
+class _TestCookieManager:
+	def __init__(self):
+		self.cookies = {}
+		self.to_delete = []
+
+	def init_cookies(self):
+		if not getattr(frappe.local, "session", {}).get("sid"):
+			return
+		if frappe.session.sid:
+			self.set_cookie("sid", frappe.session.sid, httponly=True)
+
+	def set_cookie(self, key, value, **kwargs):
+		self.cookies[key] = {"value": value, **kwargs}
+
+	def delete_cookie(self, to_delete):
+		if not isinstance(to_delete, list | tuple):
+			to_delete = [to_delete]
+		self.to_delete.extend(to_delete)
+
+
 class TestAmeideOidc(UnitTestCase):
 	@classmethod
 	def setUpClass(cls):
@@ -72,7 +92,7 @@ class TestAmeideOidc(UnitTestCase):
 	def tearDownClass(cls):
 		try:
 			if frappe.db.exists("Social Login Key", cls._provider_name):
-				frappe.delete_doc("Social Login Key", cls._provider_name, force=True)
+				frappe.delete_doc("Social Login Key", cls._provider_name, force=True, ignore_permissions=True)
 		finally:
 			cls._server.shutdown()
 			cls._server.server_close()
@@ -82,6 +102,15 @@ class TestAmeideOidc(UnitTestCase):
 		super().setUp()
 		frappe.local.form_dict = frappe._dict()
 		frappe.local.response = {}
+		# LoginManager() needs the request shape plus cookie sink methods, but
+		# Frappe's concrete CookieManager is an internal auth.py implementation.
+		from werkzeug.test import EnvironBuilder
+		from werkzeug.wrappers import Request
+
+		frappe.local.request = Request(
+			EnvironBuilder(path="/", headers={"User-Agent": "hrms-tests"}).get_environ()
+		)
+		frappe.local.cookie_manager = _TestCookieManager()
 		frappe.local.login_manager = LoginManager()
 		frappe.session.user = "Guest"
 
@@ -119,7 +148,7 @@ class TestAmeideOidc(UnitTestCase):
 
 		self.assertTrue(frappe.db.exists("User", "alice@example.com"))
 		self.assertEqual(frappe.db.get_value("User", "alice@example.com", "user_type"), "System User")
-		self.assertIn("Employee", frappe.get_roles("alice@example.com"))
+		self.assertIn("HR User", frappe.get_roles("alice@example.com"))
 
 	def test_logout_redirects_to_end_session(self):
 		frappe.session.user = "alice@example.com"
@@ -156,6 +185,7 @@ class TestAmeideOidc(UnitTestCase):
 		self.assertEqual(doc.base_url, self._issuer)
 		self.assertEqual(doc.redirect_url, "/auth/ameide-oidc/redirect")
 		self.assertTrue(doc.enable_social_login)
+		self.assertEqual(doc.sign_ups, "Allow")
 		self.assertEqual(
 			get_decrypted_password("Social Login Key", provider_name, "client_secret"),
 			"bootstrap-secret",
@@ -185,7 +215,7 @@ class TestAmeideOidc(UnitTestCase):
 			"bootstrap-secret-updated",
 		)
 		self.assertTrue(frappe.db.exists("Social Login Key", provider_name))
-		frappe.delete_doc("Social Login Key", provider_name, force=True)
+		frappe.delete_doc("Social Login Key", provider_name, force=True, ignore_permissions=True)
 		frappe.db.commit()  # nosemgrep: test cleanup must persist before later assertions run
 
 	@classmethod
@@ -206,9 +236,12 @@ class TestAmeideOidc(UnitTestCase):
 				"api_endpoint": "/protocol/openid-connect/userinfo",
 				"redirect_url": "/auth/ameide-oidc/redirect",
 				"user_id_property": "sub",
-				"enable_social_login": 1,
+				"sign_ups": "Allow",
+				"enable_social_login": 0,
 			}
-		).insert(ignore_permissions=True)
+		)
+		doc.client_secret = "client-secret"
+		doc.insert(ignore_permissions=True, set_name=cls._provider_name)
 
-		set_encrypted_password("Social Login Key", doc.name, "client_secret", "client-secret")
+		frappe.db.set_value("Social Login Key", doc.name, "enable_social_login", 1)
 		frappe.db.commit()  # nosemgrep: test fixture must persist encrypted secret before callback flow reads it

@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: server-individual-tests-lightmode-develop
+  group: server-individual-tests-develop
   cancel-in-progress: true
 
 permissions:
@@ -140,5 +140,4 @@ jobs:
           bench --site $site_name reinstall --yes
           bench --site $site_name install-app hrms
           bench --site $site_name set-config allow_tests true
-          bench --site $site_name run-tests --module ${{ matrix.test }} --lightmode
-
+          bench --site $site_name run-tests --module ${{ matrix.test }}

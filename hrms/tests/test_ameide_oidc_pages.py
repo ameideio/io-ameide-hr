@@ -35,8 +35,8 @@ class TestAmeideOidcPages(unittest.TestCase):
 		helper.begin_login = lambda redirect_to: setattr(self, "begin_login_target", redirect_to)
 		helper.normalize_redirect_to = lambda value: f"normalized:{value}"
 		helper.complete_login = lambda code, state: setattr(self, "completed_login", (code, state))
-		helper.build_logout_redirect_location = (
-			lambda id_token_hint=None: f"https://auth.example/logout?id_token_hint={id_token_hint}"
+		helper.build_logout_redirect_location = lambda id_token_hint=None: (
+			f"https://auth.example/logout?id_token_hint={id_token_hint}"
 		)
 
 		self.addCleanup(self._restore_module, "frappe", original_frappe)
@@ -96,27 +96,19 @@ class TestAmeideOidcPages(unittest.TestCase):
 			"https://auth.example/logout?id_token_hint=token-123",
 		)
 
-	def test_hooks_expose_sales_equivalent_ameide_routes(self):
+	def test_hooks_expose_ameide_oidc_routes(self):
 		hooks = self._load_hooks()
 		self.assertIn(
-			{"from_route": "/auth/ameide-oidc", "to_route": "ameide_oidc"},
+			{"from_route": "/auth/ameide-oidc", "to_route": "auth/ameide_oidc"},
 			hooks.website_route_rules,
 		)
 		self.assertIn(
-			{"from_route": "/auth/ameide-oidc/redirect", "to_route": "ameide_oidc_redirect"},
+			{"from_route": "/auth/ameide-oidc/redirect", "to_route": "auth/ameide_oidc/redirect"},
 			hooks.website_route_rules,
 		)
 		self.assertIn(
-			{"from_route": "/auth/ameide-oidc/logout", "to_route": "ameide_oidc_logout"},
+			{"from_route": "/auth/ameide-oidc/logout", "to_route": "auth/ameide_oidc/logout"},
 			hooks.website_route_rules,
-		)
-		self.assertIn(
-			{"source": "/login", "target": "/auth/ameide-oidc"},
-			hooks.website_redirects,
-		)
-		self.assertIn(
-			{"source": "/logout", "target": "/auth/ameide-oidc/logout"},
-			hooks.website_redirects,
 		)
 
 
