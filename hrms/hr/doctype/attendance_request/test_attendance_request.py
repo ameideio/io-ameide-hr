@@ -4,6 +4,8 @@
 import frappe
 from frappe.utils import add_days, add_months, get_year_ending, get_year_start, getdate
 
+from erpnext.setup.doctype.employee.employee import is_holiday
+
 from hrms.hr.doctype.attendance.attendance import mark_attendance
 from hrms.hr.doctype.attendance_request.attendance_request import OverlappingAttendanceRequestError
 from hrms.hr.doctype.leave_application.test_leave_application import make_allocation_record
@@ -184,11 +186,11 @@ class TestAttendanceRequest(HRMSTestSuite):
 		)
 		self.assertRaises(frappe.ValidationError, attendance_request.save)
 
-		# adding an extra day to the attendance request
-		attendance_request.to_date = add_days(today, 1)
+		# adding an extra working day to the attendance request
+		attendance_request.to_date = get_next_working_day(self.employee.name, today)
 		attendance_request.save()
 		attendance_request.submit()
-		# attendance created for the third day
+		# attendance created for the added working day
 		records = self.get_attendance_records(attendance_request.name)
 		self.assertEqual(records[0].status, "Present")
 
@@ -247,6 +249,15 @@ class TestAttendanceRequest(HRMSTestSuite):
 
 def get_employee():
 	return frappe.get_doc("Employee", "_T-Employee-00001")
+
+
+def get_next_working_day(employee: str, date):
+	for offset in range(1, 32):
+		candidate = add_days(date, offset)
+		if not is_holiday(employee, candidate):
+			return candidate
+
+	raise AssertionError(f"No working day found for {employee} after {date}")
 
 
 def create_attendance_request(**args: dict) -> dict:
