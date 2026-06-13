@@ -21,6 +21,10 @@ from hrms.ameide_service_token import (
 )
 
 
+class QueryDeadlockError(Exception):
+	pass
+
+
 class _Role:
 	def __init__(self, role):
 		self.role = role
@@ -55,15 +59,21 @@ class _Doc:
 		self.name = name
 		self.inserted = False
 		self.saved = False
+		self.insert_errors = []
+		self.save_errors = []
 
 	def update(self, values):
 		for key, value in values.items():
 			setattr(self, key, value)
 
 	def insert(self, ignore_permissions=False):
+		if self.insert_errors:
+			raise self.insert_errors.pop(0)
 		self.inserted = ignore_permissions
 
 	def save(self, ignore_permissions=False):
+		if self.save_errors:
+			raise self.save_errors.pop(0)
 		self.saved = ignore_permissions
 
 
@@ -71,6 +81,7 @@ class _DB:
 	def __init__(self, state):
 		self.state = state
 		self.committed = False
+		self.rollback_count = 0
 
 	def exists(self, doctype, value):
 		if doctype == "User":
@@ -93,6 +104,9 @@ class _DB:
 
 	def commit(self):
 		self.committed = True
+
+	def rollback(self):
+		self.rollback_count += 1
 
 
 class _Frappe:
@@ -258,6 +272,50 @@ class TestAmeideServiceToken(unittest.TestCase):
 		self.assertEqual(employee.employee_name, "Owner Two")
 		self.assertEqual(employee.status, "Active")
 
+	def test_ensure_employee_skips_matching_existing_employee_save(self):
+		service_user = _User("svc@example.com", [ONBOARDING_SERVICE_ROLE])
+		with self._with_frappe({"svc@example.com": service_user}) as modules:
+			frappe = modules["frappe"]
+			frappe.session.user = "svc@example.com"
+			first = ensure_employee("owner@example.com", "Owner One", "Atlas", "org-atlas")
+			employee = frappe.state["employees"][first["name"]]
+			employee.saved = False
+			second = ensure_employee("owner@example.com", "Owner One", "Atlas", "org-atlas")
+
+		self.assertFalse(second["created"])
+		self.assertFalse(employee.saved)
+		self.assertEqual(frappe.db.rollback_count, 0)
+
+	def test_ensure_employee_retries_transient_existing_employee_save(self):
+		service_user = _User("svc@example.com", [ONBOARDING_SERVICE_ROLE])
+		with self._with_frappe({"svc@example.com": service_user}) as modules:
+			frappe = modules["frappe"]
+			frappe.session.user = "svc@example.com"
+			first = ensure_employee("owner@example.com", "Owner One", "Atlas", "org-atlas")
+			employee = frappe.state["employees"][first["name"]]
+			employee.save_errors.append(QueryDeadlockError("deadlock found when trying to get lock"))
+			with patch.object(service_token_module, "_sleep_before_retry"):
+				second = ensure_employee("owner@example.com", "Owner Two", "Atlas", "org-atlas")
+
+		self.assertFalse(second["created"])
+		self.assertEqual(frappe.db.rollback_count, 1)
+		self.assertTrue(employee.saved)
+		self.assertEqual(employee.employee_name, "Owner Two")
+
+	def test_ensure_employee_does_not_retry_non_transient_save_error(self):
+		service_user = _User("svc@example.com", [ONBOARDING_SERVICE_ROLE])
+		with self._with_frappe({"svc@example.com": service_user}) as modules:
+			frappe = modules["frappe"]
+			frappe.session.user = "svc@example.com"
+			first = ensure_employee("owner@example.com", "Owner One", "Atlas", "org-atlas")
+			employee = frappe.state["employees"][first["name"]]
+			employee.save_errors.append(ValueError("invalid employee state"))
+			with self.assertRaises(ValueError):
+				ensure_employee("owner@example.com", "Owner Two", "Atlas", "org-atlas")
+
+		self.assertEqual(frappe.db.rollback_count, 0)
+		self.assertEqual(employee.save_errors, [])
+
 	def test_ensure_employee_requires_onboarding_service_role(self):
 		user = _User("regular@example.com", ["HR User"])
 		with self._with_frappe({"regular@example.com": user}) as modules:
@@ -286,6 +344,22 @@ class TestAmeideServiceToken(unittest.TestCase):
 		employee = frappe.state["employees"][created["name"]]
 		self.assertTrue(first["removed"])
 		self.assertFalse(second["removed"])
+		self.assertTrue(employee.saved)
+		self.assertEqual(employee.status, "Inactive")
+
+	def test_disable_employee_retries_transient_save(self):
+		service_user = _User("svc@example.com", [ONBOARDING_SERVICE_ROLE])
+		with self._with_frappe({"svc@example.com": service_user}) as modules:
+			frappe = modules["frappe"]
+			frappe.session.user = "svc@example.com"
+			created = ensure_employee("owner@example.com", "Owner One", "Atlas", "org-atlas")
+			employee = frappe.state["employees"][created["name"]]
+			employee.save_errors.append(QueryDeadlockError("deadlock found when trying to get lock"))
+			with patch.object(service_token_module, "_sleep_before_retry"):
+				result = disable_employee("owner@example.com", user_id="user-1")
+
+		self.assertTrue(result["removed"])
+		self.assertEqual(frappe.db.rollback_count, 1)
 		self.assertTrue(employee.saved)
 		self.assertEqual(employee.status, "Inactive")
 
