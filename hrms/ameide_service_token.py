@@ -1,5 +1,7 @@
 import hashlib
 import json
+import random
+import time
 
 import frappe
 
@@ -13,6 +15,20 @@ DEFAULT_COMPANY_VALUATION_METHOD = "FIFO"
 DEFAULT_EMPLOYEE_GENDER = "Male"
 DEFAULT_EMPLOYEE_BIRTH_DATE = "1970-01-01"
 DEFAULT_EMPLOYEE_JOINING_DATE = "2026-01-01"
+DB_CONCURRENCY_RETRY_ATTEMPTS = 3
+DB_CONCURRENCY_RETRY_BASE_SECONDS = 0.1
+DB_CONCURRENCY_RETRY_MAX_SECONDS = 0.5
+TRANSIENT_DB_ERROR_NAMES = (
+	"QueryDeadlockError",
+	"DeadlockError",
+	"LockWaitTimeoutError",
+	"QueryTimeoutError",
+)
+TRANSIENT_DB_ERROR_MESSAGES = (
+	"deadlock",
+	"lock wait timeout",
+	"try restarting transaction",
+)
 
 
 def _normalize_roles(roles: str | list[str] | tuple[str, ...]) -> list[str]:
@@ -110,6 +126,48 @@ def _ensure_company(organization_name: str, organization_id: str) -> str:
 	return organization_name
 
 
+def _is_transient_db_concurrency_error(error: Exception) -> bool:
+	error_type = type(error)
+	error_names = {error_type.__name__}
+	if error_type.__module__:
+		error_names.add(error_type.__module__)
+
+	if any(name in error_name for error_name in error_names for name in TRANSIENT_DB_ERROR_NAMES):
+		return True
+
+	message = str(error).lower()
+	if type(error).__name__ == "OperationalError":
+		return any(marker in message for marker in TRANSIENT_DB_ERROR_MESSAGES)
+	return any(marker in message for marker in TRANSIENT_DB_ERROR_MESSAGES)
+
+
+def _rollback_after_transient_failure() -> None:
+	rollback = getattr(frappe.db, "rollback", None)
+	if callable(rollback):
+		rollback()
+
+
+def _sleep_before_retry(attempt: int) -> None:
+	limit = min(DB_CONCURRENCY_RETRY_BASE_SECONDS * (2 ** (attempt - 1)), DB_CONCURRENCY_RETRY_MAX_SECONDS)
+	time.sleep(random.uniform(0, limit))
+
+
+def _with_db_concurrency_retry(operation):
+	for attempt in range(1, DB_CONCURRENCY_RETRY_ATTEMPTS + 1):
+		try:
+			return operation()
+		except Exception as error:
+			if not _is_transient_db_concurrency_error(error):
+				raise
+
+			_rollback_after_transient_failure()
+			if attempt == DB_CONCURRENCY_RETRY_ATTEMPTS:
+				raise
+			_sleep_before_retry(attempt)
+
+	raise RuntimeError("unreachable db concurrency retry state")
+
+
 def _employee_fields(email: str, full_name: str, company: str) -> dict[str, object]:
 	first_name, _last_name = _split_name(full_name)
 	return {
@@ -127,6 +185,29 @@ def _employee_fields(email: str, full_name: str, company: str) -> dict[str, obje
 def _apply_fields(doc, fields: dict[str, object]) -> None:
 	for key, value in fields.items():
 		setattr(doc, key, value)
+
+
+def _restore_fields(doc, fields: dict[str, object]) -> None:
+	for key, value in fields.items():
+		setattr(doc, key, value)
+
+
+def _save_doc_with_fields(doc, fields: dict[str, object]) -> None:
+	previous_fields = {key: getattr(doc, key, None) for key in fields}
+	_apply_fields(doc, fields)
+	try:
+		doc.save(ignore_permissions=True)
+	except Exception as error:
+		if _is_transient_db_concurrency_error(error):
+			_restore_fields(doc, previous_fields)
+		raise
+
+
+def _doc_matches_fields(doc, fields: dict[str, object]) -> bool:
+	for key, value in fields.items():
+		if getattr(doc, key, None) != value:
+			return False
+	return True
 
 
 @frappe.whitelist(methods=["GET"])
@@ -153,6 +234,22 @@ def ensure_employee(
 ) -> dict[str, object]:
 	_require_onboarding_service_role()
 	email = _require_text(email, "email")
+
+	return _with_db_concurrency_retry(
+		lambda: _ensure_employee_once(
+			email, full_name, organization_name, organization_id, user_id, idempotency_key
+		)
+	)
+
+
+def _ensure_employee_once(
+	email: str,
+	full_name: str,
+	organization_name: str,
+	organization_id: str = "",
+	user_id: str = "",
+	idempotency_key: str = "",
+) -> dict[str, object]:
 	company = _ensure_company(organization_name, organization_id)
 	fields = _employee_fields(email, full_name, company)
 
@@ -160,8 +257,8 @@ def ensure_employee(
 	name = frappe.db.exists(EMPLOYEE_DOCTYPE, {"company_email": email})
 	if name:
 		employee = frappe.get_doc(EMPLOYEE_DOCTYPE, name)
-		_apply_fields(employee, fields)
-		employee.save(ignore_permissions=True)
+		if not _doc_matches_fields(employee, fields):
+			_save_doc_with_fields(employee, fields)
 	else:
 		employee = frappe.get_doc({"doctype": EMPLOYEE_DOCTYPE, **fields})
 		employee.insert(ignore_permissions=True)
@@ -190,6 +287,22 @@ def disable_employee(
 ) -> dict[str, object]:
 	_require_onboarding_service_role()
 	email = _require_text(email, "email")
+
+	return _with_db_concurrency_retry(
+		lambda: _disable_employee_once(
+			email, full_name, organization_name, organization_id, user_id, idempotency_key
+		)
+	)
+
+
+def _disable_employee_once(
+	email: str,
+	full_name: str = "",
+	organization_name: str = "",
+	organization_id: str = "",
+	user_id: str = "",
+	idempotency_key: str = "",
+) -> dict[str, object]:
 	name = frappe.db.exists(EMPLOYEE_DOCTYPE, {"company_email": email})
 	if not name:
 		return {
@@ -204,8 +317,14 @@ def disable_employee(
 	employee = frappe.get_doc(EMPLOYEE_DOCTYPE, name)
 	removed = getattr(employee, "status", "") != "Inactive"
 	if removed:
+		previous_status = getattr(employee, "status", "")
 		employee.status = "Inactive"
-		employee.save(ignore_permissions=True)
+		try:
+			employee.save(ignore_permissions=True)
+		except Exception as error:
+			if _is_transient_db_concurrency_error(error):
+				employee.status = previous_status
+			raise
 
 	return {
 		"email": email,
