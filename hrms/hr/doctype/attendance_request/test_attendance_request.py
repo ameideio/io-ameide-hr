@@ -53,12 +53,13 @@ class TestAttendanceRequest(HRMSTestSuite):
 
 	def test_on_duty_attendance_request(self):
 		"Test creation of Attendance from Attendance Request, on duty."
+		working_day = get_working_day_on_or_before(self.employee.name, getdate())
 		attendance_request = create_attendance_request(
 			employee=self.employee.name,
 			reason="On Duty",
 			company="_Test Company",
-			from_date=getdate(),
-			to_date=getdate(),
+			from_date=working_day,
+			to_date=working_day,
 		)
 		records = self.get_attendance_records(attendance_request.name)
 
@@ -89,10 +90,15 @@ class TestAttendanceRequest(HRMSTestSuite):
 		self.assertEqual(records[0].docstatus, 2)
 
 	def test_overwrite_attendance(self):
-		attendance_name = mark_attendance(self.employee.name, getdate(), "Absent")
+		working_day = get_working_day_on_or_before(self.employee.name, getdate())
+		attendance_name = mark_attendance(self.employee.name, working_day, "Absent")
 
 		attendance_request = create_attendance_request(
-			employee=self.employee.name, reason="Work From Home", company="_Test Company"
+			employee=self.employee.name,
+			reason="Work From Home",
+			company="_Test Company",
+			from_date=working_day,
+			to_date=working_day,
 		)
 		prev_attendance = frappe.get_doc("Attendance", attendance_name)
 
@@ -125,18 +131,22 @@ class TestAttendanceRequest(HRMSTestSuite):
 		).insert()
 
 		make_allocation_record(leave_type=leave_type.name, from_date=self.from_date, to_date=self.to_date)
-		today = getdate()
-		make_leave_application(self.employee.name, today, today, leave_type.name)
+		leave_day = get_working_day_on_or_before(self.employee.name, getdate())
+		attendance_day = get_previous_working_day(self.employee.name, leave_day)
+		make_leave_application(self.employee.name, leave_day, leave_day, leave_type.name)
 
 		attendance_request = create_attendance_request(
-			employee=self.employee.name, reason="On Duty", company="_Test Company"
+			employee=self.employee.name,
+			reason="On Duty",
+			company="_Test Company",
+			from_date=attendance_day,
+			to_date=leave_day,
 		)
 		records = self.get_attendance_records(attendance_request.name)
 
-		# only 1 attendance marked for yesterday
-		# attendance skipped for today since its a leave
+		# only 1 attendance marked; attendance skipped for the leave day
 		self.assertEqual(len(records), 1)
-		self.assertEqual(records[0].attendance_date, add_days(today, -1))
+		self.assertEqual(records[0].attendance_date, attendance_day)
 		self.assertEqual(records[0].status, "Present")
 
 	def test_include_holidays_check(self):
@@ -196,15 +206,16 @@ class TestAttendanceRequest(HRMSTestSuite):
 
 	def test_half_day_status_change(self):
 		# when new attendance is created via attendance request
+		working_day = get_working_day_on_or_before(self.employee.name, getdate())
 		attendance_request = frappe.get_doc(
 			{
 				"doctype": "Attendance Request",
 				"employee": self.employee.name,
-				"from_date": getdate(),
-				"to_date": getdate(),
+				"from_date": working_day,
+				"to_date": working_day,
 				"reason": "On Duty",
 				"half_day": 1,
-				"half_day_date": getdate(),
+				"half_day_date": working_day,
 				"company": "_Test Company",
 			}
 		).save()
@@ -217,11 +228,12 @@ class TestAttendanceRequest(HRMSTestSuite):
 
 	def test_half_day_status_change_when_existing_attendance_is_updated(self):
 		# when existing attendance is updated via attendance request
+		working_day = get_working_day_on_or_before(self.employee.name, getdate())
 		frappe.get_doc(
 			{
 				"doctype": "Attendance",
 				"employee": self.employee.name,
-				"attendance_date": getdate(),
+				"attendance_date": working_day,
 				"status": "Absent",
 				"company": "_Test Company",
 			}
@@ -231,11 +243,11 @@ class TestAttendanceRequest(HRMSTestSuite):
 			{
 				"doctype": "Attendance Request",
 				"employee": self.employee.name,
-				"from_date": getdate(),
-				"to_date": getdate(),
+				"from_date": working_day,
+				"to_date": working_day,
 				"reason": "On Duty",
 				"half_day": 1,
-				"half_day_date": getdate(),
+				"half_day_date": working_day,
 				"company": "_Test Company",
 			}
 		).save()
@@ -258,6 +270,24 @@ def get_next_working_day(employee: str, date):
 			return candidate
 
 	raise AssertionError(f"No working day found for {employee} after {date}")
+
+
+def get_working_day_on_or_before(employee: str, date):
+	for offset in range(0, 32):
+		candidate = add_days(date, -offset)
+		if not is_holiday(employee, candidate):
+			return candidate
+
+	raise AssertionError(f"No working day found for {employee} on or before {date}")
+
+
+def get_previous_working_day(employee: str, date):
+	for offset in range(1, 32):
+		candidate = add_days(date, -offset)
+		if not is_holiday(employee, candidate):
+			return candidate
+
+	raise AssertionError(f"No working day found for {employee} before {date}")
 
 
 def create_attendance_request(**args: dict) -> dict:
