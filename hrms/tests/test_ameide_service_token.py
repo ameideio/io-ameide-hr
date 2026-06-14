@@ -91,6 +91,12 @@ class _DB:
 		if doctype == "Company":
 			return value if value in self.state["companies"] else None
 		if doctype == "Employee" and isinstance(value, dict):
+			if "ameide_user_id" in value:
+				user_id = value.get("ameide_user_id")
+				for name, employee in self.state["employees"].items():
+					if getattr(employee, "ameide_user_id", "") == user_id:
+						return name
+				return None
 			email = value.get("company_email")
 			for name, employee in self.state["employees"].items():
 				if getattr(employee, "company_email", "") == email:
@@ -108,13 +114,46 @@ class _DB:
 	def rollback(self):
 		self.rollback_count += 1
 
+	def get_all(self, doctype, pluck=None, limit=None, order_by=None):
+		if doctype == "Company" and pluck == "name":
+			values = list(self.state["companies"])
+			return values[:limit] if limit else values
+		return []
+
+
+class _Defaults:
+	def __init__(self, company):
+		self.company = company
+
+	def get_global_default(self, key):
+		if key == "company":
+			return self.company
+		return None
+
+
+class _Meta:
+	def __init__(self, fields):
+		self.fields = [types.SimpleNamespace(fieldname=field) for field in fields]
+
+	def has_field(self, field):
+		return field in {row.fieldname for row in self.fields}
+
 
 class _Frappe:
 	def __init__(self, users):
-		self.state = {"users": users, "roles": {}, "companies": {}, "employees": {}}
+		default_company = _Doc("Company", "Ameide")
+		default_company.company_name = "Ameide"
+		self.state = {
+			"users": users,
+			"roles": {},
+			"companies": {"Ameide": default_company},
+			"employees": {},
+		}
 		self.db = _DB(self.state)
 		self.users = self.state["users"]
 		self.session = types.SimpleNamespace(user="")
+		self.defaults = _Defaults("Ameide")
+		self.conf = {}
 
 	def get_doc(self, *args):
 		if isinstance(args[0], dict):
@@ -157,6 +196,18 @@ class _Frappe:
 
 	def get_roles(self, user):
 		return [row.role for row in self.users[user].roles]
+
+	def get_meta(self, doctype):
+		if doctype == "Employee":
+			return _Meta(
+				[
+					"ameide_organization_id",
+					"ameide_organization_name",
+					"ameide_user_id",
+					"ameide_idempotency_key",
+				]
+			)
+		return _Meta([])
 
 
 class TestAmeideServiceToken(unittest.TestCase):
@@ -217,7 +268,7 @@ class TestAmeideServiceToken(unittest.TestCase):
 		self.assertEqual(result["ensure_method"], "hrms.ameide_service_token.ensure_employee")
 		self.assertEqual(result["disable_method"], "hrms.ameide_service_token.disable_employee")
 
-	def test_ensure_employee_creates_company_and_employee(self):
+	def test_ensure_employee_uses_existing_company_and_creates_employee(self):
 		service_user = _User("svc@example.com", [ONBOARDING_SERVICE_ROLE])
 		with self._with_frappe({"svc@example.com": service_user}) as modules:
 			frappe = modules["frappe"]
@@ -231,39 +282,41 @@ class TestAmeideServiceToken(unittest.TestCase):
 				idempotency_key="seed-hr-1",
 			)
 
-		company = frappe.state["companies"]["E2E Support Customer"]
 		employee = frappe.state["employees"][result["name"]]
 		self.assertTrue(result["created"])
 		self.assertEqual(result["permission_contract_version"], PERMISSION_CONTRACT_VERSION)
-		self.assertEqual(company.abbr, "ESC1F847A6B")
-		self.assertEqual(company.default_currency, "USD")
-		self.assertEqual(company.country, "United States")
-		self.assertEqual(employee.company, "E2E Support Customer")
+		self.assertNotIn("E2E Support Customer", frappe.state["companies"])
+		self.assertEqual(employee.company, "Ameide")
 		self.assertEqual(employee.company_email, "owner@example.com")
+		self.assertEqual(employee.ameide_organization_id, "org-e2e-support-customer")
+		self.assertEqual(employee.ameide_organization_name, "E2E Support Customer")
+		self.assertEqual(employee.ameide_user_id, "user-1")
+		self.assertEqual(employee.ameide_idempotency_key, "seed-hr-1")
 		self.assertEqual(employee.gender, "Male")
 		self.assertEqual(employee.status, "Active")
 
-	def test_company_abbreviation_uses_organization_identity(self):
+	def test_ensure_employee_uses_ameide_user_id_for_idempotency(self):
 		service_user = _User("svc@example.com", [ONBOARDING_SERVICE_ROLE])
 		with self._with_frappe({"svc@example.com": service_user}) as modules:
 			frappe = modules["frappe"]
 			frappe.session.user = "svc@example.com"
-			ensure_employee("a@example.com", "Owner A", "Atlas", "org-atlas-a")
-			ensure_employee("b@example.com", "Owner B", "Atlas Labs", "org-atlas-b")
+			first = ensure_employee("first@example.com", "Owner A", "Atlas", "org-atlas", "user-1")
+			second = ensure_employee("second@example.com", "Owner A", "Atlas", "org-atlas", "user-1")
 
-		first = frappe.state["companies"]["Atlas"].abbr
-		second = frappe.state["companies"]["Atlas Labs"].abbr
-		self.assertNotEqual(first, second)
-		self.assertTrue(first.startswith("A"))
-		self.assertTrue(second.startswith("AL"))
+		self.assertTrue(first["created"])
+		self.assertFalse(second["created"])
+		self.assertEqual(first["name"], second["name"])
+		self.assertEqual(len(frappe.state["employees"]), 1)
+		employee = frappe.state["employees"][first["name"]]
+		self.assertEqual(employee.company_email, "second@example.com")
 
 	def test_ensure_employee_updates_existing_employee_idempotently(self):
 		service_user = _User("svc@example.com", [ONBOARDING_SERVICE_ROLE])
 		with self._with_frappe({"svc@example.com": service_user}) as modules:
 			frappe = modules["frappe"]
 			frappe.session.user = "svc@example.com"
-			first = ensure_employee("owner@example.com", "Owner One", "Atlas", "org-atlas")
-			second = ensure_employee("owner@example.com", "Owner Two", "Atlas", "org-atlas")
+			first = ensure_employee("owner@example.com", "Owner One", "Atlas", "org-atlas", "user-1")
+			second = ensure_employee("owner@example.com", "Owner Two", "Atlas", "org-atlas", "user-1")
 
 		self.assertTrue(first["created"])
 		self.assertFalse(second["created"])
@@ -277,10 +330,10 @@ class TestAmeideServiceToken(unittest.TestCase):
 		with self._with_frappe({"svc@example.com": service_user}) as modules:
 			frappe = modules["frappe"]
 			frappe.session.user = "svc@example.com"
-			first = ensure_employee("owner@example.com", "Owner One", "Atlas", "org-atlas")
+			first = ensure_employee("owner@example.com", "Owner One", "Atlas", "org-atlas", "user-1")
 			employee = frappe.state["employees"][first["name"]]
 			employee.saved = False
-			second = ensure_employee("owner@example.com", "Owner One", "Atlas", "org-atlas")
+			second = ensure_employee("owner@example.com", "Owner One", "Atlas", "org-atlas", "user-1")
 
 		self.assertFalse(second["created"])
 		self.assertFalse(employee.saved)
@@ -291,11 +344,11 @@ class TestAmeideServiceToken(unittest.TestCase):
 		with self._with_frappe({"svc@example.com": service_user}) as modules:
 			frappe = modules["frappe"]
 			frappe.session.user = "svc@example.com"
-			first = ensure_employee("owner@example.com", "Owner One", "Atlas", "org-atlas")
+			first = ensure_employee("owner@example.com", "Owner One", "Atlas", "org-atlas", "user-1")
 			employee = frappe.state["employees"][first["name"]]
 			employee.save_errors.append(QueryDeadlockError("deadlock found when trying to get lock"))
 			with patch.object(service_token_module, "_sleep_before_retry"):
-				second = ensure_employee("owner@example.com", "Owner Two", "Atlas", "org-atlas")
+				second = ensure_employee("owner@example.com", "Owner Two", "Atlas", "org-atlas", "user-1")
 
 		self.assertFalse(second["created"])
 		self.assertEqual(frappe.db.rollback_count, 1)
@@ -307,11 +360,11 @@ class TestAmeideServiceToken(unittest.TestCase):
 		with self._with_frappe({"svc@example.com": service_user}) as modules:
 			frappe = modules["frappe"]
 			frappe.session.user = "svc@example.com"
-			first = ensure_employee("owner@example.com", "Owner One", "Atlas", "org-atlas")
+			first = ensure_employee("owner@example.com", "Owner One", "Atlas", "org-atlas", "user-1")
 			employee = frappe.state["employees"][first["name"]]
 			employee.save_errors.append(ValueError("invalid employee state"))
 			with self.assertRaises(ValueError):
-				ensure_employee("owner@example.com", "Owner Two", "Atlas", "org-atlas")
+				ensure_employee("owner@example.com", "Owner Two", "Atlas", "org-atlas", "user-1")
 
 		self.assertEqual(frappe.db.rollback_count, 0)
 		self.assertEqual(employee.save_errors, [])
@@ -322,7 +375,7 @@ class TestAmeideServiceToken(unittest.TestCase):
 			frappe = modules["frappe"]
 			frappe.session.user = "regular@example.com"
 			with self.assertRaises(PermissionError):
-				ensure_employee("owner@example.com", "Owner One", "Atlas", "org-atlas")
+				ensure_employee("owner@example.com", "Owner One", "Atlas", "org-atlas", "user-1")
 
 	def test_ensure_employee_requires_organization_identity(self):
 		service_user = _User("svc@example.com", [ONBOARDING_SERVICE_ROLE])
@@ -330,14 +383,31 @@ class TestAmeideServiceToken(unittest.TestCase):
 			frappe = modules["frappe"]
 			frappe.session.user = "svc@example.com"
 			with self.assertRaises(ValueError):
-				ensure_employee("owner@example.com", "Owner One", "Atlas", "")
+				ensure_employee("owner@example.com", "Owner One", "Atlas", "", "user-1")
+
+	def test_ensure_employee_requires_user_identity(self):
+		service_user = _User("svc@example.com", [ONBOARDING_SERVICE_ROLE])
+		with self._with_frappe({"svc@example.com": service_user}) as modules:
+			frappe = modules["frappe"]
+			frappe.session.user = "svc@example.com"
+			with self.assertRaises(ValueError):
+				ensure_employee("owner@example.com", "Owner One", "Atlas", "org-atlas", "")
+
+	def test_ensure_employee_requires_ameide_fields(self):
+		service_user = _User("svc@example.com", [ONBOARDING_SERVICE_ROLE])
+		with self._with_frappe({"svc@example.com": service_user}) as modules:
+			frappe = modules["frappe"]
+			frappe.session.user = "svc@example.com"
+			with patch.object(frappe, "get_meta", return_value=_Meta([])):
+				with self.assertRaisesRegex(RuntimeError, "Employee is missing Ameide fields"):
+					ensure_employee("owner@example.com", "Owner One", "Atlas", "org-atlas", "user-1")
 
 	def test_disable_employee_marks_employee_inactive(self):
 		service_user = _User("svc@example.com", [ONBOARDING_SERVICE_ROLE])
 		with self._with_frappe({"svc@example.com": service_user}) as modules:
 			frappe = modules["frappe"]
 			frappe.session.user = "svc@example.com"
-			created = ensure_employee("owner@example.com", "Owner One", "Atlas", "org-atlas")
+			created = ensure_employee("owner@example.com", "Owner One", "Atlas", "org-atlas", "user-1")
 			first = disable_employee("owner@example.com", user_id="user-1")
 			second = disable_employee("owner@example.com", user_id="user-1")
 
@@ -352,7 +422,7 @@ class TestAmeideServiceToken(unittest.TestCase):
 		with self._with_frappe({"svc@example.com": service_user}) as modules:
 			frappe = modules["frappe"]
 			frappe.session.user = "svc@example.com"
-			created = ensure_employee("owner@example.com", "Owner One", "Atlas", "org-atlas")
+			created = ensure_employee("owner@example.com", "Owner One", "Atlas", "org-atlas", "user-1")
 			employee = frappe.state["employees"][created["name"]]
 			employee.save_errors.append(QueryDeadlockError("deadlock found when trying to get lock"))
 			with patch.object(service_token_module, "_sleep_before_retry"):

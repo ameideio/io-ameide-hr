@@ -1,17 +1,24 @@
-import hashlib
 import json
+import os
 import random
 import time
 
 import frappe
 
-PERMISSION_CONTRACT_VERSION = "hr-employee-method-v1"
+PERMISSION_CONTRACT_VERSION = "hr-employee-method-v2"
 ONBOARDING_SERVICE_ROLE = "Ameide HR Onboarding"
 EMPLOYEE_DOCTYPE = "Employee"
 COMPANY_DOCTYPE = "Company"
-DEFAULT_COMPANY_CURRENCY = "USD"
-DEFAULT_COMPANY_COUNTRY = "United States"
-DEFAULT_COMPANY_VALUATION_METHOD = "FIFO"
+AMEIDE_ORGANIZATION_ID_FIELD = "ameide_organization_id"
+AMEIDE_ORGANIZATION_NAME_FIELD = "ameide_organization_name"
+AMEIDE_USER_ID_FIELD = "ameide_user_id"
+AMEIDE_IDEMPOTENCY_KEY_FIELD = "ameide_idempotency_key"
+AMEIDE_EMPLOYEE_FIELDS = (
+	AMEIDE_ORGANIZATION_ID_FIELD,
+	AMEIDE_ORGANIZATION_NAME_FIELD,
+	AMEIDE_USER_ID_FIELD,
+	AMEIDE_IDEMPOTENCY_KEY_FIELD,
+)
 DEFAULT_EMPLOYEE_GENDER = "Male"
 DEFAULT_EMPLOYEE_BIRTH_DATE = "1970-01-01"
 DEFAULT_EMPLOYEE_JOINING_DATE = "2026-01-01"
@@ -71,27 +78,6 @@ def _require_onboarding_service_role() -> None:
 		raise PermissionError(f"{ONBOARDING_SERVICE_ROLE} role required")
 
 
-def _company_abbreviation(company_name: str, organization_id: str) -> str:
-	organization_id = str(organization_id or "").strip()
-	if not organization_id:
-		raise ValueError("organization_id is required")
-
-	words = str(company_name or "").split()
-	prefix = "".join(_first_alnum(word) for word in words)
-	if not prefix:
-		prefix = "".join(ch for ch in str(company_name or "") if ch.isalnum())[:4]
-	prefix = (prefix or "CO")[:4].upper()
-	suffix = hashlib.sha256(organization_id.encode("utf-8")).hexdigest()[:8].upper()
-	return f"{prefix}{suffix}"
-
-
-def _first_alnum(value: str) -> str:
-	for ch in value:
-		if ch.isalnum():
-			return ch
-	return ""
-
-
 def _require_text(value: str, field_name: str) -> str:
 	value = str(value or "").strip()
 	if not value:
@@ -107,23 +93,57 @@ def _employee_display_name(email: str, full_name: str) -> str:
 	return local.strip() or "Ameide Employee"
 
 
-def _ensure_company(organization_name: str, organization_id: str) -> str:
-	organization_name = _require_text(organization_name, "organization_name")
-	if frappe.db.exists(COMPANY_DOCTYPE, organization_name):
-		return organization_name
+def _configured_employee_company() -> str:
+	values = [
+		os.environ.get("AMEIDE_HR_EMPLOYEE_COMPANY"),
+		_get_conf_value("ameide_hr_employee_company"),
+		_get_conf_value("ameide_employee_company"),
+		_get_global_default_company(),
+		_get_global_defaults_company(),
+		_get_first_company(),
+	]
+	for value in values:
+		company = str(value or "").strip()
+		if company and frappe.db.exists(COMPANY_DOCTYPE, company):
+			return company
+	raise ValueError("HR employee company is not configured")
 
-	company = frappe.get_doc(
-		{
-			"doctype": COMPANY_DOCTYPE,
-			"company_name": organization_name,
-			"abbr": _company_abbreviation(organization_name, organization_id),
-			"default_currency": DEFAULT_COMPANY_CURRENCY,
-			"country": DEFAULT_COMPANY_COUNTRY,
-			"valuation_method": DEFAULT_COMPANY_VALUATION_METHOD,
-		}
-	)
-	company.insert(ignore_permissions=True)
-	return organization_name
+
+def _get_conf_value(key: str) -> str:
+	conf = getattr(frappe, "conf", None)
+	if conf is None:
+		return ""
+	if hasattr(conf, "get"):
+		return str(conf.get(key) or "")
+	return str(getattr(conf, key, "") or "")
+
+
+def _get_global_default_company() -> str:
+	defaults = getattr(frappe, "defaults", None)
+	get_global_default = getattr(defaults, "get_global_default", None)
+	if not callable(get_global_default):
+		return ""
+	return str(get_global_default("company") or "")
+
+
+def _get_global_defaults_company() -> str:
+	get_single_value = getattr(frappe.db, "get_single_value", None)
+	if not callable(get_single_value):
+		return ""
+	return str(get_single_value("Global Defaults", "default_company") or "")
+
+
+def _get_first_company() -> str:
+	get_all = getattr(frappe.db, "get_all", None) or getattr(frappe, "get_all", None)
+	if not callable(get_all):
+		return ""
+	try:
+		companies = get_all(COMPANY_DOCTYPE, pluck="name", limit=1, order_by="creation asc")
+	except TypeError:
+		companies = get_all(COMPANY_DOCTYPE, pluck="name", limit=1)
+	if not companies:
+		return ""
+	return str(companies[0] or "")
 
 
 def _is_transient_db_concurrency_error(error: Exception) -> bool:
@@ -180,6 +200,48 @@ def _employee_fields(email: str, full_name: str, company: str) -> dict[str, obje
 		"date_of_joining": DEFAULT_EMPLOYEE_JOINING_DATE,
 		"status": "Active",
 	}
+
+
+def _ameide_employee_fields(
+	organization_name: str,
+	organization_id: str,
+	user_id: str,
+	idempotency_key: str,
+) -> dict[str, object]:
+	_require_ameide_employee_fields()
+	fields = {
+		AMEIDE_ORGANIZATION_NAME_FIELD: str(organization_name or "").strip(),
+		AMEIDE_ORGANIZATION_ID_FIELD: str(organization_id or "").strip(),
+		AMEIDE_USER_ID_FIELD: str(user_id or "").strip(),
+		AMEIDE_IDEMPOTENCY_KEY_FIELD: str(idempotency_key or "").strip(),
+	}
+	return {key: value for key, value in fields.items() if value}
+
+
+def _require_ameide_employee_fields() -> None:
+	missing = [field for field in AMEIDE_EMPLOYEE_FIELDS if not _employee_has_field(field)]
+	if missing:
+		raise RuntimeError(f"Employee is missing Ameide fields: {', '.join(missing)}")
+
+
+def _employee_has_field(field_name: str) -> bool:
+	get_meta = getattr(frappe, "get_meta", None)
+	if not callable(get_meta):
+		return False
+	meta = get_meta(EMPLOYEE_DOCTYPE)
+	has_field = getattr(meta, "has_field", None)
+	if callable(has_field):
+		return bool(has_field(field_name))
+	return any(getattr(field, "fieldname", "") == field_name for field in getattr(meta, "fields", []))
+
+
+def _find_employee_name(email: str, user_id: str = "") -> str:
+	user_id = str(user_id or "").strip()
+	if user_id:
+		name = frappe.db.exists(EMPLOYEE_DOCTYPE, {AMEIDE_USER_ID_FIELD: user_id})
+		if name:
+			return name
+	return frappe.db.exists(EMPLOYEE_DOCTYPE, {"company_email": email})
 
 
 def _apply_fields(doc, fields: dict[str, object]) -> None:
@@ -250,11 +312,17 @@ def _ensure_employee_once(
 	user_id: str = "",
 	idempotency_key: str = "",
 ) -> dict[str, object]:
-	company = _ensure_company(organization_name, organization_id)
-	fields = _employee_fields(email, full_name, company)
+	organization_name = _require_text(organization_name, "organization_name")
+	organization_id = _require_text(organization_id, "organization_id")
+	user_id = _require_text(user_id, "user_id")
+	company = _configured_employee_company()
+	fields = {
+		**_employee_fields(email, full_name, company),
+		**_ameide_employee_fields(organization_name, organization_id, user_id, idempotency_key),
+	}
 
 	created = False
-	name = frappe.db.exists(EMPLOYEE_DOCTYPE, {"company_email": email})
+	name = _find_employee_name(email, user_id)
 	if name:
 		employee = frappe.get_doc(EMPLOYEE_DOCTYPE, name)
 		if not _doc_matches_fields(employee, fields):

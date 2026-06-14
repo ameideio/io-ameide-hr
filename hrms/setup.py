@@ -282,6 +282,42 @@ def get_custom_fields():
 				"options": "Cost Center",
 				"insert_after": "salary_cb",
 			},
+			{
+				"collapsible": 1,
+				"fieldname": "ameide_identity_section",
+				"fieldtype": "Section Break",
+				"label": _("Ameide Identity"),
+				"insert_after": "payroll_cost_center",
+			},
+			{
+				"fieldname": "ameide_organization_id",
+				"fieldtype": "Data",
+				"label": _("Ameide Organization ID"),
+				"read_only": 1,
+				"insert_after": "ameide_identity_section",
+			},
+			{
+				"fieldname": "ameide_organization_name",
+				"fieldtype": "Data",
+				"label": _("Ameide Organization Name"),
+				"read_only": 1,
+				"insert_after": "ameide_organization_id",
+			},
+			{
+				"fieldname": "ameide_user_id",
+				"fieldtype": "Data",
+				"label": _("Ameide User ID"),
+				"read_only": 1,
+				"unique": 1,
+				"insert_after": "ameide_organization_name",
+			},
+			{
+				"fieldname": "ameide_idempotency_key",
+				"fieldtype": "Data",
+				"label": _("Ameide Idempotency Key"),
+				"read_only": 1,
+				"insert_after": "ameide_user_id",
+			},
 		],
 		"Project": [
 			{
