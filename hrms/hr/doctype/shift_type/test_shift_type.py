@@ -913,6 +913,7 @@ class TestShiftType(HRMSTestSuite):
 	def test_working_hours_threshold_for_half_day_holiday(self):
 		from hrms.hr.doctype.employee_checkin.test_employee_checkin import make_checkin
 
+		attendance_date = get_non_holiday_date_on_or_before("_Test Half Day", getdate())
 		shift = setup_shift_type(
 			start_time="10:00:00",
 			end_time="18:00:00",
@@ -930,37 +931,46 @@ class TestShiftType(HRMSTestSuite):
 			"test_working_hours3@example.com", company="_Test Company", default_shift=shift.name
 		)
 
-		add_date_to_holiday_list(getdate(), "_Test Half Day", is_half_day=1)
+		add_date_to_holiday_list(attendance_date, "_Test Half Day", is_half_day=1)
 		# employee1 worked for 4 hours which is full threshold on half day
-		make_checkin(employee1, datetime.combine(getdate(), get_time("10:00:00")))
-		make_checkin(employee1, datetime.combine(getdate(), get_time("14:00:00")))
+		make_checkin(employee1, datetime.combine(attendance_date, get_time("10:00:00")))
+		make_checkin(employee1, datetime.combine(attendance_date, get_time("14:00:00")))
 
 		# employee2 worked for 2 hours less than half day's threshold on half day
-		make_checkin(employee2, datetime.combine(getdate(), get_time("10:00:00")))
-		make_checkin(employee2, datetime.combine(getdate(), get_time("12:00:00")))
+		make_checkin(employee2, datetime.combine(attendance_date, get_time("10:00:00")))
+		make_checkin(employee2, datetime.combine(attendance_date, get_time("12:00:00")))
 
 		# employee3 worked for 1 hour, less than the threshold for absent on half day
-		make_checkin(employee3, datetime.combine(getdate(), get_time("10:00:00")))
-		make_checkin(employee3, datetime.combine(getdate(), get_time("11:00:00")))
+		make_checkin(employee3, datetime.combine(attendance_date, get_time("10:00:00")))
+		make_checkin(employee3, datetime.combine(attendance_date, get_time("11:00:00")))
 
 		shift.process_auto_attendance()
 		attendance1 = frappe.get_doc(
-			"Attendance", {"employee": employee1, "shift": shift.name, "attendance_date": getdate()}
+			"Attendance", {"employee": employee1, "shift": shift.name, "attendance_date": attendance_date}
 		)
 		self.assertEqual(attendance1.working_hours, 4.00)
 		self.assertEqual(attendance1.status, "Present")
 
 		attendance2 = frappe.get_doc(
-			"Attendance", {"employee": employee2, "shift": shift.name, "attendance_date": getdate()}
+			"Attendance", {"employee": employee2, "shift": shift.name, "attendance_date": attendance_date}
 		)
 		self.assertEqual(attendance2.working_hours, 2)
 		self.assertEqual(attendance2.status, "Half Day")
 
 		attendance3 = frappe.get_doc(
-			"Attendance", {"employee": employee3, "shift": shift.name, "attendance_date": getdate()}
+			"Attendance", {"employee": employee3, "shift": shift.name, "attendance_date": attendance_date}
 		)
 		self.assertEqual(attendance3.working_hours, 1)
 		self.assertEqual(attendance3.status, "Absent")
+
+
+def get_non_holiday_date_on_or_before(holiday_list: str, date):
+	for offset in range(0, 32):
+		candidate = add_days(date, -offset)
+		if not frappe.db.exists("Holiday", {"parent": holiday_list, "holiday_date": candidate}):
+			return candidate
+
+	raise AssertionError(f"No non-holiday date found in {holiday_list} on or before {date}")
 
 
 def setup_shift_type(**args):
