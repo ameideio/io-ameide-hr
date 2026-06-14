@@ -40,3 +40,4 @@ hrms.patches.v16_0.delete_old_workspaces #2026-01-09
 hrms.patches.v16_0.create_holiday_list_assignments
 hrms.patches.v16_0.set_base_paid_amount_in_employee_advance
 hrms.patches.v16_0.set_currency_and_base_fields_in_expense_claim
+hrms.patches.v16_0.create_ameide_employee_identity_fields
