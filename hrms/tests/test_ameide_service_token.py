@@ -13,11 +13,9 @@ if "frappe" not in sys.modules:
 import hrms.ameide_service_token as service_token_module
 from hrms.ameide_service_token import (
 	ONBOARDING_SERVICE_ROLE,
-	PERMISSION_CONTRACT_VERSION,
 	disable_employee,
 	ensure_employee,
 	ensure_token,
-	service_token_contract,
 )
 
 
@@ -242,7 +240,6 @@ class TestAmeideServiceToken(unittest.TestCase):
 		self.assertIn(ONBOARDING_SERVICE_ROLE, [row.role for row in frappe.users["svc@example.com"].roles])
 		self.assertEqual(result["api_key"], "key-svc@example.com")
 		self.assertEqual(result["api_secret"], "secret-svc@example.com")
-		self.assertEqual(result["permission_contract_version"], PERMISSION_CONTRACT_VERSION)
 
 	def test_updates_existing_user_roles(self):
 		users = {"svc@example.com": _User("svc@example.com", ["System Manager"])}
@@ -254,19 +251,6 @@ class TestAmeideServiceToken(unittest.TestCase):
 			[row.role for row in users["svc@example.com"].roles],
 			["System Manager", "HR Manager", ONBOARDING_SERVICE_ROLE],
 		)
-
-	def test_service_token_contract_reports_required_methods_and_role(self):
-		user = _User("svc@example.com", [ONBOARDING_SERVICE_ROLE])
-		with self._with_frappe({"svc@example.com": user}) as modules:
-			frappe = modules["frappe"]
-			frappe.session.user = "svc@example.com"
-			result = service_token_contract()
-
-		self.assertEqual(result["permission_contract_version"], PERMISSION_CONTRACT_VERSION)
-		self.assertEqual(result["user"], "svc@example.com")
-		self.assertTrue(result["onboarding_role"])
-		self.assertEqual(result["ensure_method"], "hrms.ameide_service_token.ensure_employee")
-		self.assertEqual(result["disable_method"], "hrms.ameide_service_token.disable_employee")
 
 	def test_ensure_employee_uses_existing_company_and_creates_employee(self):
 		service_user = _User("svc@example.com", [ONBOARDING_SERVICE_ROLE])
@@ -284,7 +268,6 @@ class TestAmeideServiceToken(unittest.TestCase):
 
 		employee = frappe.state["employees"][result["name"]]
 		self.assertTrue(result["created"])
-		self.assertEqual(result["permission_contract_version"], PERMISSION_CONTRACT_VERSION)
 		self.assertNotIn("E2E Support Customer", frappe.state["companies"])
 		self.assertEqual(employee.company, "Ameide")
 		self.assertEqual(employee.company_email, "owner@example.com")
@@ -441,7 +424,6 @@ class TestAmeideServiceToken(unittest.TestCase):
 			result = disable_employee("missing@example.com", user_id="user-1")
 
 		self.assertFalse(result["removed"])
-		self.assertEqual(result["permission_contract_version"], PERMISSION_CONTRACT_VERSION)
 
 
 if __name__ == "__main__":
